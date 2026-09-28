@@ -446,6 +446,8 @@ importers:
         specifier: ^7.2.6
         version: 7.3.3(@types/node@24.12.2)(jiti@2.6.1)(lightningcss@1.32.0)(tsx@4.21.0)(yaml@2.9.0)
 
+  apps/zcode-cli/packages/dsh-purge-plugin: {}
+
   apps/zcode-cli/packages/dynamic-workflow:
     dependencies:
       typescript:
@@ -16179,8 +16181,6 @@ snapshots:
   lodash.uniqby@4.7.0: {}
 
   lodash@4.18.1: {}
-
-  lodash.pickby@4.6.0: {}
 
   log-symbols@4.1.0:
     dependencies:
