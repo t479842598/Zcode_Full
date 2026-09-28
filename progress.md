@@ -319,3 +319,19 @@ node --test packages/desktop/tests/selfhost/release-version.test.ts → 2/2 通�
 ### 过程教训（本轮踩到，已记）
 - 未设 ZCODE_ENV=production 时试跑 electron-builder 会产出 ZCode Preview-<版本>-mac-arm64_TEST 包；CI 注释早有警告，本次试跑确认属实，该 TEST 产物已删除。正式打包务必带 ZCODE_ENV=production。
 - pnpm exec electron-builder --prepackaged 不会重新签名，不能用来验证签名配置改动。
+
+## 2026-09-29 - Task: v3.14.4 发布（GitHub CI + 三平台更新清单）
+### What was done
+推 selfhost-release 与 tag v3.14.4，CI（run 36455207938）三平台全绿：macOS arm64 12m46s、macOS x64 13m03s、Windows x64 16m55s，Attach to release 建出 Release v3.14.4 共 12 个资产。Release 标题与正文换成 docs/releases/v3.14.4-selfhost.md（3907 字符），不再是自动生成的 changelog 链接。随后发布三平台更新清单到 zcode.tang74.top；darwin-aarch64 / darwin-x86_64 / windows-x86_64 线上均返回 version 3.14.4、HTTP 200，三个下载 URL 跟随后重定向最终 HTTP 200 且 content-length 与清单声明逐字节一致。
+### Testing
+- CI 产物 arm64 zip 解包后 codesign --verify --deep --strict 通过（Identifier=dev.zcode.app / adhoc / CodeResources）—— 证明 identity 退回 adhoc 的修复对 CI 同样生效。
+- CI 产物内 dsh-purge-plugin 的 .zcode-plugin/hooks/lib/prompts 齐备、红队技能 23 个；用产物里的真实路径跑 hook，注入 3145 字符、共享预算 18442/24000、A/B 类锚点齐备。
+- 下载的 arm64 zip sha512 与 latest-mac.yml 声明值逐字一致（U/ebW8I2…），size 177837969 一致；线上清单 sha512 与该文件 sha512 一致 —— 客户端下载后完整性校验必过。
+- Windows exe 下载后实测 sha512/size 与 Release 的 latest.yml 声明一致（E09YX3Gs…/149680773）。
+### Notes
+- packages/desktop/dist/{darwin-aarch64,darwin-x86_64,windows-x86_64}-manifest.yml：客户端清单（dist 已 gitignore，不入库）。
+- progress.md：本条。
+### 重要操作说明（下次发版照此做，否则会发错清单）
+publish-release.mjs 读取的是**本地** dist/latest-mac.yml，而安装包实际托管在 GitHub Release（CI 产物）。本地构建与 CI 构建的 zip 字节不同、sha512 不同，**直接跑脚本会把本地 sha512 发上线 → 客户端下载后校验失败**。正确做法：先从 Release 下载 CI 的 latest-mac.yml（macOS）与 latest.yml（Windows），用它替换本地同名文件，再跑 `node scripts/publish-release.mjs --platform <p> --dry-run` 生成客户端清单，最后 scp 到服务器并 chown www:www。
+另注：CI 的 mac-x64 job 的 upload 路径**不含 latest-mac.yml**，x64 清单需用 x64 zip 实测 sha512/size 自建（本次已用 CI 工作流产物 art-x64 实测，size 与 Release 资产一致）。
+回滚：manifests 可用上一版备份覆盖；GitHub 侧 `gh release delete v3.14.4 --cleanup-tag` 后重发。
