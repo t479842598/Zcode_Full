@@ -1,0 +1,36 @@
+{
+  "description": "dsh-purge 操作者指令注入。SessionStart 走 additionalContext（与 infinite-gen-4 同一通道，共享 24k 预算）；UserPromptSubmit 默认关闭，长会话可按需补注。",
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|clear|compact",
+        "hooks": [
+          {
+            "type": "process",
+            "command": "node",
+            "args": [
+              "${ZCODE_PLUGIN_ROOT}/hooks/session-start.mjs"
+            ],
+            "timeoutMs": 8000,
+            "statusMessage": "dsh-purge：装载操作者指令…"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "process",
+            "command": "node",
+            "args": [
+              "${ZCODE_PLUGIN_ROOT}/hooks/user-prompt-submit.mjs"
+            ],
+            "timeoutMs": 8000,
+            "statusMessage": "dsh-purge：补注操作者指令…"
+          }
+        ]
+      }
+    ]
+  }
+}

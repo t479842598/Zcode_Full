@@ -1,0 +1,6 @@
+{
+  "sha256": "420443a6e042ec541807067ec73d8b8a22c3e0adcc1a55fa29eee703c9aaf6d3",
+  "chars": 3051,
+  "upstream": "dsh-purge v1.1.35 (DeepSeek Harness cordis 插件)",
+  "note": "ZCode 无 DSH 的弱框定/身份句靶点，本载荷是按 A 类（指令效力强化）+ B 类（身份剥离）语义重写后的等价注入文本。改动 prompts/operator-directive.md 后需同步此指纹。"
+}

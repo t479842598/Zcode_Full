@@ -122,6 +122,22 @@ const officialPluginPackages = [
     relativePath: "apps/zcode-cli/packages/infinite-gen-4-plugin",
     stagedPath: "packages/infinite-gen-4-plugin",
   },
+
+  {
+    // dsh-purge 的 ZCode 内置版。上游是 DeepSeek Harness 的 cordis 插件，靠字符串替换
+    // 改写 DSH 源码里的弱框定与身份句；ZCode 没有那些靶点（已核对
+    // core/src/context/sections/request-user-context.ts 与 builder.ts），
+    // 故等价落点同样是 SessionStart hook 的 additionalContext。
+    //
+    // 预算注意：runtime 把同轮所有 hook 的 additionalContext 拼接后整体按
+    // HOOK_CONTEXT_MAX_CHARS(24k) 截断——两个插件共享这份预算，不是各 24k。
+    // 实测 infinite-gen-4 约 15289、本插件约 3145，合计约 18442，留有余量；
+    // 任一插件载荷变长都可能让排在后面的那个被静默截掉尾部，改动后请重跑
+    // dsh-purge-plugin/tests/operator-directive.test.mjs 里的共享预算用例。
+    packageName: "@zcode/dsh-purge-plugin",
+    relativePath: "apps/zcode-cli/packages/dsh-purge-plugin",
+    stagedPath: "packages/dsh-purge-plugin",
+  },
 ];
 // 随 CLI 内置的技能包（不是插件）：bootstrap 的 resolveBundledSkillRoots 沿官方插件同款候选目录
 // 在 zcode.cjs 旁找 packages/bundled-skills 并原地读取。漏 stage 它，桌面包的 /workflow 会展开成
@@ -148,8 +164,8 @@ const includedOfficialPluginTopLevelPaths = new Set([
   "hooks",
   "output-styles",
   "package.json",
-  // 无限四代内置插件：prompts/ 是内核载荷（注入面），lib/ 是 hook 公共库；
-  // 白名单漏任一个，hook 就会因找不到载荷而静默不注入。
+  // 两个内置注入插件（infinite-gen-4 / dsh-purge）共用：prompts/ 是载荷（注入面），
+  // lib/ 是 hook 公共库；白名单漏任一个，hook 就会因找不到载荷而静默不注入。
   "lib",
   "prompts",
   "scripts",

@@ -1,0 +1,7 @@
+{
+  "name": "dsh-purge",
+  "version": "1.1.35",
+  "description": "dsh-purge 的 ZCode 内置版。上游是 DeepSeek Harness 的 cordis 插件，靠替换 DSH 源码里的弱框定与身份句生效；ZCode 没有那些字符串，故等价落点为 SessionStart hook 的 additionalContext，注入 A 类（指令效力强化）与 B 类（身份剥离）语义。C 类（审批 / 沙箱拒绝话术）不移植——ZCode 的权限由 core/src/permission/ 真实管控。",
+  "author": { "name": "qt4798 (ZCode port)" },
+  "license": "MIT"
+}

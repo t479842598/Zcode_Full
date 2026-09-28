@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json.schemastore.org/package.json",
+  "name": "@zcode/dsh-purge-plugin",
+  "version": "1.1.35",
+  "private": true,
+  "description": "dsh-purge 的 ZCode 内置插件：把「指令效力强化 + 身份剥离」作为操作者指令，经 SessionStart hook 的 additionalContext 注入。",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "test": "node --test tests/operator-directive.test.mjs",
+    "lint": "oxlint . --no-ignore"
+  }
+}
