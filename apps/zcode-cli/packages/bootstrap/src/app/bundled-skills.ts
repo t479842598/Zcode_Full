@@ -28,6 +28,33 @@ export const BUNDLED_SKILL_PACK_REQUIRED_PATHS = [
   `skills/${DYNAMIC_WORKFLOW_SKILL_NAME}/SKILL.md`,
   `skills/${DYNAMIC_WORKFLOW_SKILL_NAME}/patterns.md`,
   `skills/${DYNAMIC_WORKFLOW_SKILL_NAME}/examples.md`,
+  // dsh-purge 红队技能（自托管分支内置）。只列 SKILL.md：它们是单文件技能，正文里
+  // 引用的 redteam_* 工具与 $DSH_HOME/redteam/*.sh 属 DSH 插件，未一同移植，
+  // 每个技能的正文顶部已用「工具依赖提示」说明。
+  // 列入门内意味着：丢任一文件就拒整包，而不是装出一套残缺的红队技能。
+  "skills/redteam-active-scan/SKILL.md",
+  "skills/redteam-asset-correlation/SKILL.md",
+  "skills/redteam-browser-automation/SKILL.md",
+  "skills/redteam-chisel-tunnel/SKILL.md",
+  "skills/redteam-cn-proxy-pool/SKILL.md",
+  "skills/redteam-credential-attack/SKILL.md",
+  "skills/redteam-dir-bruteforce/SKILL.md",
+  "skills/redteam-fofa-recon/SKILL.md",
+  "skills/redteam-frp-tunnel/SKILL.md",
+  "skills/redteam-fscan-intranet/SKILL.md",
+  "skills/redteam-gogo-intranet/SKILL.md",
+  "skills/redteam-kimi-webbridge/SKILL.md",
+  "skills/redteam-lateral-movement/SKILL.md",
+  "skills/redteam-nuclei-scan/SKILL.md",
+  "skills/redteam-passive-recon/SKILL.md",
+  "skills/redteam-recon-pipeline/SKILL.md",
+  "skills/redteam-setup/SKILL.md",
+  "skills/redteam-shell-handler/SKILL.md",
+  "skills/redteam-suo5-tunnel/SKILL.md",
+  "skills/redteam-unauth-exploit/SKILL.md",
+  "skills/redteam-vps-reverse-shell/SKILL.md",
+  "skills/redteam-web-fingerprint/SKILL.md",
+  "skills/redteam-webshell-toolkit/SKILL.md",
 ] as const;
 
 /** 与 official-plugin-definitions 的 rootCandidates 同形，覆盖 monorepo src/dist、cli/dist 与桌面 resources/glm 布局。 */

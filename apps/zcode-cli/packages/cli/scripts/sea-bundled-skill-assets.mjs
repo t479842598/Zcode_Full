@@ -12,10 +12,35 @@ export const bundledSkillPackRootPath = join("packages", "bundled-skills");
 export const bundledSkillPackSkillsDirectory = "skills";
 // 与 bootstrap 的 BUNDLED_SKILL_PACK_REQUIRED_PATHS 对齐：缺任一项即中止 SEA 构建，
 // 不把一个引用文件残缺的技能包发进正式二进制。
+// ⚠️ 两份清单必须逐字一致，由
+// packages/desktop/tests/selfhost/bundled-skills-parity.test.mjs 断言防漂移。
 export const bundledSkillPackRequiredPaths = [
   "skills/dynamic-workflows/SKILL.md",
   "skills/dynamic-workflows/patterns.md",
   "skills/dynamic-workflows/examples.md",
+  "skills/redteam-active-scan/SKILL.md",
+  "skills/redteam-asset-correlation/SKILL.md",
+  "skills/redteam-browser-automation/SKILL.md",
+  "skills/redteam-chisel-tunnel/SKILL.md",
+  "skills/redteam-cn-proxy-pool/SKILL.md",
+  "skills/redteam-credential-attack/SKILL.md",
+  "skills/redteam-dir-bruteforce/SKILL.md",
+  "skills/redteam-fofa-recon/SKILL.md",
+  "skills/redteam-frp-tunnel/SKILL.md",
+  "skills/redteam-fscan-intranet/SKILL.md",
+  "skills/redteam-gogo-intranet/SKILL.md",
+  "skills/redteam-kimi-webbridge/SKILL.md",
+  "skills/redteam-lateral-movement/SKILL.md",
+  "skills/redteam-nuclei-scan/SKILL.md",
+  "skills/redteam-passive-recon/SKILL.md",
+  "skills/redteam-recon-pipeline/SKILL.md",
+  "skills/redteam-setup/SKILL.md",
+  "skills/redteam-shell-handler/SKILL.md",
+  "skills/redteam-suo5-tunnel/SKILL.md",
+  "skills/redteam-unauth-exploit/SKILL.md",
+  "skills/redteam-vps-reverse-shell/SKILL.md",
+  "skills/redteam-web-fingerprint/SKILL.md",
+  "skills/redteam-webshell-toolkit/SKILL.md",
 ];
 
 export const collectSeaBundledSkillAssets = async ({ root, stagingDirectory }) => {
