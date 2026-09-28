@@ -112,6 +112,16 @@ const officialPluginPackages = [
     runtimeBuildScript: "scripts/build.mjs",
     stagedPath: "packages/node-repl-host",
   },
+
+  {
+    // 无限四代（dsh-infinite-gen-4）内核的 ZCode 内置版。
+    // 上游是 DeepSeek Harness 插件，用 ctx.systemPrompt.section 注入系统提示词；
+    // ZCode 没有该 API，等价通道是 SessionStart hook 的 additionalContext。
+    // 纯 JS + 静态载荷，不需要构建步骤（requiresRuntime 留空）。
+    packageName: "@zcode/infinite-gen-4-plugin",
+    relativePath: "apps/zcode-cli/packages/infinite-gen-4-plugin",
+    stagedPath: "packages/infinite-gen-4-plugin",
+  },
 ];
 // 随 CLI 内置的技能包（不是插件）：bootstrap 的 resolveBundledSkillRoots 沿官方插件同款候选目录
 // 在 zcode.cjs 旁找 packages/bundled-skills 并原地读取。漏 stage 它，桌面包的 /workflow 会展开成
@@ -138,6 +148,10 @@ const includedOfficialPluginTopLevelPaths = new Set([
   "hooks",
   "output-styles",
   "package.json",
+  // 无限四代内置插件：prompts/ 是内核载荷（注入面），lib/ 是 hook 公共库；
+  // 白名单漏任一个，hook 就会因找不到载荷而静默不注入。
+  "lib",
+  "prompts",
   "scripts",
   "skills",
   "templates",

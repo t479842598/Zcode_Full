@@ -1,0 +1,7 @@
+{
+  "name": "infinite-gen-4",
+  "version": "0.4.0",
+  "description": "无限四代（Infinite Generation Four）v0.4.0-hardened 内核的 ZCode 内置版。通过 SessionStart hook 的 additionalContext 注入系统级提示词，等价 DSH 的 systemPrompt.section 双层注入。",
+  "author": { "name": "Minglink (upstream kernel) / qt4798 (ZCode port)" },
+  "license": "MIT"
+}

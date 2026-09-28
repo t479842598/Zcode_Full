@@ -1,0 +1,36 @@
+{
+  "description": "无限四代 v0.4.0-hardened 内核注入。SessionStart 走 additionalContext 注入（等价 DSH 的 systemPrompt.section）；UserPromptSubmit 可选每轮补注；compact 后按需重注。",
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|clear|compact",
+        "hooks": [
+          {
+            "type": "process",
+            "command": "node",
+            "args": [
+              "${ZCODE_PLUGIN_ROOT}/hooks/session-start.mjs"
+            ],
+            "timeoutMs": 8000,
+            "statusMessage": "无限四代：装载内核…"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "process",
+            "command": "node",
+            "args": [
+              "${ZCODE_PLUGIN_ROOT}/hooks/user-prompt-submit.mjs"
+            ],
+            "timeoutMs": 8000,
+            "statusMessage": "无限四代：补注内核…"
+          }
+        ]
+      }
+    ]
+  }
+}

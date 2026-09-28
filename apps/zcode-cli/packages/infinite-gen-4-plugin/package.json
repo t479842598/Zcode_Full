@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json.schemastore.org/package.json",
+  "name": "@zcode/infinite-gen-4-plugin",
+  "version": "0.4.0",
+  "private": true,
+  "description": "无限四代（dsh-infinite-gen-4）内核的 ZCode 内置插件：把 DSH 的 systemPrompt.section 双层注入等价落到 SessionStart hook 的 additionalContext 通道。",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "test": "node --test tests/kernel.test.mjs",
+    "lint": "oxlint . --no-ignore"
+  }
+}

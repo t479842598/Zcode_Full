@@ -1,0 +1,8 @@
+{
+  "kernelVersion": "0.4.0-hardened",
+  "kernelBuild": "0.4.0-hardened+zcode-port",
+  "sha256": "2709010707aede392f3c6ac2b8476fd1af484edd73714679ea5cc57b132626c4",
+  "source": "dsh-infinite-gen-4-v0.4.1.zip (upstream v0.4.0-hardened kernel)",
+  "upstreamRepo": "Minglink/dsh-infinite-gen-4",
+  "note": "prompts/kernel.md 与 prompts/kernel-flash.md 必须逐字节一致；任一偏离即由 SessionStart 逃生条款锁告警。"
+}

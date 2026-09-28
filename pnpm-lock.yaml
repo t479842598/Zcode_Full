@@ -472,6 +472,8 @@ importers:
         specifier: workspace:*
         version: link:../contracts
 
+  apps/zcode-cli/packages/infinite-gen-4-plugin: {}
+
   apps/zcode-cli/packages/node-repl-host:
     dependencies:
       '@modelcontextprotocol/server':
@@ -16172,11 +16174,11 @@ snapshots:
 
   lodash.merge@4.6.2: {}
 
+  lodash.pickby@4.6.0: {}
+
   lodash.uniqby@4.7.0: {}
 
   lodash@4.18.1: {}
-
-  lodash.pickby@4.6.0: {}
 
   log-symbols@4.1.0:
     dependencies:
