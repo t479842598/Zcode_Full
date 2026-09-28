@@ -69,3 +69,9 @@ packages/desktop/.e2e-artifacts/
 packages/desktop/.e2e-cache/
 packages/desktop/.e2e-network-capture/
 .zcode-runtime/
+
+# 桌面端打包产物曾落到仓库根（非源码，三个 ref 里都未跟踪）。
+# 它们会让全仓 lint 报 max-lines 错误，且被 git add -A 扫进索引。
+# 根锚定：只忽略仓库根目录，不误伤 packages/*/index.js。
+/index.js
+/chunk-*.js
