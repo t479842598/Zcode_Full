@@ -6,8 +6,11 @@ import { collectBuildMetadata } from "../../scripts/build-metadata.mjs";
 test("selfhost version tracks the official stable line", async () => {
   const root = new URL("../../../../package.json", import.meta.url);
   const pkg = JSON.parse(await readFile(root, "utf8"));
-  // F-15：自托管版本号与官方稳定版对齐，不再自增补丁号。
-  assert.equal(pkg.version, "3.14.3");
+  // F-15：自托管版本号与官方稳定版对齐，不自增补丁号去冒充官方新版。
+  // 本轮官方线是 3.14.3，本版在其之上做了三件事（同步官方 3.14.3 增量、内置 dsh-purge
+  // 增强内核、内置 23 个红队技能），必须比 3.14.3 大客户端才收得到自建更新清单——
+  // autoUpdater 用 semver.gt 判定，同版本号不更新。故取 3.14.4。
+  assert.equal(pkg.version, "3.14.4");
   assert.equal(collectBuildMetadata().appVersion, pkg.version);
   const publish = await readFile(
     new URL("../../../../scripts/publish-release.mjs", import.meta.url),

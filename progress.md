@@ -249,3 +249,73 @@ upstream typecheck与CLI packages编译通过；工作流合同6项、relay本�
 - docs/releases/v3.14.3-selfhost.md：删除过时本地仓库描述。
 - progress.md：追加实际UI验证和发行包重建门禁。
 回滚：本条提交git revert；已安装APP的回滚仍按备份执行。
+
+## 2026-09-29 - Task: 同步官方 v3.14.3 开源增量（三方合并）
+### What was done
+自托管分支与官方开源仓库无共同祖先（merge-base 为空），不能用 merge，改走三方合并（base=872ad96/v3.14.0，ours=自托管，theirs=29628c9/v3.14.3，共 283 文件）。官方新增 30342 行，全部核对就位；280 个文件对齐官方。README 补入官方「## 更新」章节并保留自托管分支说明。两个 UI 文件保留自托管实现：WebRemoteControlDialog.tsx 在 v3.14.0 基线里不存在，官方与自托管是各自新建的两套独立实现（官方=IM Bot 通道，自托管=自建中继），WorkspaceSidebarFooter.tsx 同理；官方的 WorkspaceWebRemoteControlTrigger.tsx 与 BotsDialog/* 因此在本分支暂无引用。仓库根 18 个未跟踪构建残留（index.js、chunk-*.js）加进 .gitignore 根锚定忽略。
+### Testing
+逐行审计脚本核对官方新增行全部就位（缺口 163 行确认全部落在 3 个已解的冲突文件内）；pnpm typecheck EXIT=0。
+### Notes
+- .gitignore：根锚定忽略 /index.js 与 /chunk-*.js（三个 ref 里都未跟踪，会让全仓 lint 报 max-lines）。
+- README.md：补官方「## 更新」章节。
+- pnpm-lock.yaml：三方合并（后被下一轮修复）。
+- packages/ui/src/WebRemoteControlDialog.tsx、WorkspaceSidebarFooter.tsx：保留自托管实现，未改。
+回滚：git revert 本条提交；分支备份 backup/pre-sync-20260929-000557。
+
+## 2026-09-29 - Task: 内置 dsh-purge 增强内核（指令效力强化 + 身份剥离）
+### What was done
+新增 apps/zcode-cli/packages/dsh-purge-plugin/，把 DeepSeek Harness 插件 dsh-purge v1.1.35 的提示词层语义移植进 ZCode。判定依据：dsh-purge 靠替换 DSH 源码字符串生效，靶点是弱框定句与身份句，ZCode 两者都不存在（已核对 request-user-context.ts 与 builder.ts），故改为在等价通道（SessionStart hook 的 additionalContext）新增注入而非替换。只移植 A 类（指令效力强化）+ B 类（身份剥离）；C 类（审批/沙箱拒绝话术）不移植，因为 ZCode 权限由 core/src/permission/ 真实执行，提示词层宣称「审批已放行」会误导模型。登记进 desktop 打包清单 officialPluginPackages。
+### Testing
+插件自测 15/15；打包与预算测试 6/6；hook 实测注入 3145 字符，与 infinite-gen-4（15306）合计约 18451/24000，留有余量。
+### Notes
+- apps/zcode-cli/packages/dsh-purge-plugin/**：新增插件包（hooks/lib/prompts/tests）。
+- packages/desktop/scripts/prepare-agent-node-bundle.mjs：登记 officialPluginPackages，白名单注释合并。
+- packages/desktop/tests/selfhost/dsh-purge-bundling.test.mjs：新增打包与共享预算测试。
+回滚：git revert 本条提交。
+
+## 2026-09-29 - Task: 内置 23 个红队技能到 bundled-skills
+### What was done
+把 dsh-purge 的 23 个红队文档转成 ZCode 技能格式（skills/<name>/SKILL.md）随包分发。转换不是纯拷贝：原文档把「适用时机」并进 description，ZCode 有独立 when_to_use 字段，已拆开；description 按纯量输出，因为 ZCode 的 parseScalar 只剥最外层成对引号、不处理反斜杠转义。正文引用的 redteam_* 工具与 $DSH_HOME/redteam/*.sh 属 DSH 插件、未一同移植，每个技能顶部加了「工具依赖提示」说明不要调用不存在的工具。完整性门两处清单（bootstrap 与 SEA 打包脚本）同步。
+### Testing
+bundled-skills-parity 测试 6/6（含两份清单逐字一致、frontmatter 可被 ZCode 解析、无反斜杠转义、技能名唯一）；SEA 资产收集实测 27 资产 / 24 个 SKILL.md（23 红队 + dynamic-workflows）；tsc -b packages/bootstrap EXIT=0。
+### Notes
+- apps/zcode-cli/packages/bundled-skills/skills/redteam-*/SKILL.md：新增 23 个技能。
+- apps/zcode-cli/packages/bootstrap/src/app/bundled-skills.ts：requiredPaths 增加 23 条。
+- apps/zcode-cli/packages/cli/scripts/sea-bundled-skill-assets.mjs：同形清单同步（防漂移）。
+- packages/desktop/tests/selfhost/bundled-skills-parity.test.mjs：新增防漂移与格式测试。
+回滚：git revert 本条提交。
+
+## 2026-09-29 - Task: 修复三方合并产生的损坏锁文件
+### What was done
+阶段 1 的 pnpm-lock.yaml 三方合并把 lodash.pickby@4.6.0 在 snapshots 段写了两遍，YAML 里成了 duplicated mapping key。症状不是 lint 级：pnpm 直接判 ERR_PNPM_BROKEN_LOCKFILE，进而让 electron-builder 解析依赖树失败（Node module collector process exited with code 1），打包中止在 bundle:electron-builder 阶段，报错只提 collector 退出码、不指向锁文件，容易误判为 electron-builder 自身问题。用 yaml 的 AST 全量扫描确认全文件只有这一组重复键，删掉第二处（两处逐字相同）。
+### Testing
+pnpm list --depth 0 恢复正常输出（此前直接 ERR_PNPM_BROKEN_LOCKFILE）；pnpm install --frozen-lockfile 报 "Lockfile is up to date" 并 Done，35 个 workspace 项目全覆盖（含新增 dsh-purge-plugin）。
+### Notes
+- pnpm-lock.yaml：删除重复条目。破损版本备份在 /tmp/pnpm-lock.yaml.merged-broken。
+回滚：git revert 本条提交。
+
+## 2026-09-29 - Task: 版本号提到 3.14.4 并清空历史 GitHub tag
+### What was done
+用户选定「用 3.14.4 + 清掉之前用过的 tag」。先把 fork 上 v3.14.0-selfhost.1/v3.14.1~v3.14.7 共 8 个 Release（含资产）与 tag 全部删除，本地 tag 同步清空，再重建 3.14.4。清空前完整备份了 tag→commit 映射与每个 Release 的元数据+资产清单到 ~/Downloads/zcode-selfhost-backups/tags-backup-*/；所有旧 tag 都是当前 HEAD 的祖先，可随时用记录的 SHA 重建。根 package.json 版本 3.14.3→3.14.4，release-version.test.ts 断言同步并写明取 3.14.4 的理由（autoUpdater 用 semver.gt 判定，同版本号收不到自建更新清单）。docs/releases/v3.14.4-selfhost.md 重写为本次内容（旧 3.14.4 是 2026-09-26 的「官方活动额度入口」版，已随 tag 删除，其功能仍在代码里）。
+### Testing
+node --test packages/desktop/tests/selfhost/release-version.test.ts → 2/2 通过；删除后 ls-remote 确认远端 0 tag、gh release list 0 条、本地 git tag 为空。
+### Notes
+- package.json：版本 3.14.4。
+- packages/desktop/tests/selfhost/release-version.test.ts：断言与注释同步。
+- docs/releases/v3.14.4-selfhost.md：重写为本次发布说明。
+- progress.md：本条。
+回滚：git revert 本条提交；GitHub 侧用 ~/Downloads/zcode-selfhost-backups/tags-backup-*/tags.txt 里的 SHA 重建 tag。
+
+## 2026-09-29 - Task: 修复 arm64 产物签名破损（identity 必须退回 adhoc）
+### What was done
+本地替换安装后发现 scripts/doctor-macos-release-app.sh 报 codesign 失败：产物 Contents/_CodeSignature 被剥离，但签名块仍在，codesign --verify --deep --strict 报 "code has no resources but signature indicates they must be present"。根因在 packages/desktop/electron-builder.config.js：关闭真签名时写的是 identity: null，而 arm64 强制要求有效签名，显式 null 会把 electron-builder 的 adhoc 兜底一起关掉（构建日志原话 "identity explicitly is set to null" 与 "arm64 requires signing"）。后果隐蔽——App 本机照常启动，只有签名校验与 Gatekeeper 会拒，因此光看「能打开」发现不了。改为关闭真签名时退回 adhoc（identity: "-"），产出与历史发布包一致（Identifier=dev.zcode.app + Signature=adhoc + _CodeSignature/CodeResources）。该行是自托管分支 fe49611 引入，非本次同步造成。
+### Testing
+对 /Applications/ZCode.app 手工 adhoc 重签后 codesign --verify --deep --strict 通过、bash scripts/doctor-macos-release-app.sh 输出 done 无错误、签名 profile 与旧 3.14.3 备份逐项一致；App 启动正常。配置改动后 node 加载 electron-builder.config.js 确认 mac.identity === "-"、hardenedRuntime === false，随后以 ZCODE_ENV=production 重跑完整 bundle 复验。
+### Notes
+- packages/desktop/electron-builder.config.js：identity 关闭签名分支由 null 改为 "-"，并写明 arm64 约束与症状。
+- progress.md：本条。
+回滚：git revert 本条提交。若只想恢复旧行为，把 identity 分支改回 null（但不建议，会退回发布门禁失败状态）。
+
+### 过程教训（本轮踩到，已记）
+- 未设 ZCODE_ENV=production 时试跑 electron-builder 会产出 ZCode Preview-<版本>-mac-arm64_TEST 包；CI 注释早有警告，本次试跑确认属实，该 TEST 产物已删除。正式打包务必带 ZCODE_ENV=production。
+- pnpm exec electron-builder --prepackaged 不会重新签名，不能用来验证签名配置改动。
