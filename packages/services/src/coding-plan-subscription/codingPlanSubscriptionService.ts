@@ -41,6 +41,8 @@ export function createCodingPlanSubscriptionService(
     getStaticProducts: () => bigmodelProvider.getStaticProducts(),
     getStaticTeamProducts: () => bigmodelProvider.getStaticTeamProducts(),
     getStartPlanPreview: () => bigmodelProvider.getStartPlanPreview(),
+    getManualClaimPlanPreviews: () => bigmodelProvider.getManualClaimPlanPreviews(),
+    claimManualPlan: (input) => bigmodelProvider.claimManualPlan(input),
     getCaptchaConfig: () => bigmodelProvider.getCaptchaConfig(),
     getOffPeakClientConfig: (options) => bigmodelProvider.getOffPeakClientConfig(options),
     // 动态工作流灰度：与 client/configs 同源，

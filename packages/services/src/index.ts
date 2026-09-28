@@ -250,6 +250,17 @@ export {
   ICodingPlanSubscriptionService,
   type OffPeakClientConfig,
 } from "./coding-plan-subscription/codingPlanSubscription.js";
+// 官方限时可领取体验套餐：UI 只消费类型与失败归因纯函数；网络实现在 node 侧。
+export { resolveManualClaimPlanFailureReason } from "./coding-plan-subscription/manualClaimPlanFailure.js";
+export type {
+  ManualClaimPlanPreview,
+  ManualClaimPlanPreviewResult,
+  ManualClaimPlanEntitlement,
+  ManualClaimPlanClaimInput,
+  ManualClaimPlanClaimResult,
+  ManualClaimPlanClaimedPlan,
+  ManualClaimPlanFailureReason,
+} from "./coding-plan-subscription/manualClaimPlan.js";
 export {
   IClientScenesService,
   type ClientSceneConfig,

@@ -53,6 +53,13 @@ import type {
 } from "@zcode/shared";
 import type { ModelSelectionView } from "@zcode/provider";
 import { parseCaptchaConfig, type CaptchaConfig } from "./captchaConfig.js";
+import {
+  claimManualPlan,
+  fetchManualClaimPlanPreviews,
+  type ManualClaimPlanClaimInput,
+  type ManualClaimPlanClaimResult,
+  type ManualClaimPlanPreviewResult,
+} from "./manualClaimPlan.js";
 import type { OffPeakClientConfig } from "./codingPlanSubscription.js";
 import {
   BIGMODEL_PROVIDER_ID,
@@ -214,6 +221,25 @@ export class BigModelCodingPlanSubscriptionProvider {
   async getStartPlanPreview(): Promise<StartPlanPreviewConfig | null> {
     const payload = await this.getClientConfigs();
     return unwrapClientConfigStartPlanPreview(payload);
+  }
+
+  /**
+   * 官方限时可领取体验套餐：走独立 billing 端点，不读 client/configs 快照。
+   * 未登录（无 zcodejwttoken）时返回空列表，与官方一致——不发带空鉴权的请求。
+   */
+  async getManualClaimPlanPreviews(): Promise<ManualClaimPlanPreviewResult> {
+    return fetchManualClaimPlanPreviews({
+      apiClient: this.apiClient,
+      credentialService: this.credentialService,
+    });
+  }
+
+  /** 领取体验套餐；失败返回结构化结果，不抛异常。 */
+  async claimManualPlan(input: ManualClaimPlanClaimInput): Promise<ManualClaimPlanClaimResult> {
+    return claimManualPlan(
+      { apiClient: this.apiClient, credentialService: this.credentialService },
+      input,
+    );
   }
 
   async getCaptchaConfig(): Promise<CaptchaConfig | null> {

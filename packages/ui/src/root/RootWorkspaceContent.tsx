@@ -4,6 +4,7 @@ import { ScopedErrorBoundary } from "@/ErrorBoundary.js";
 import { ServiceProvider } from "@/hooks/useServices.js";
 import { logger } from "@/logger.js";
 import { WorkspaceSettingsLayer } from "@/root/WorkspaceSettingsLayer.js";
+import { ManualClaimPlanBanner } from "@/root/ManualClaimPlanBanner.js";
 import type { AppProps } from "@/app-shell/types.js";
 import type { RootProps } from "@/root/types.js";
 import type { IFeedbackService, IServiceAccessor } from "@zcode/services";
@@ -136,6 +137,14 @@ export function RootWorkspaceContent({
               variant="panel"
               className="h-full"
             >
+              {/* 官方限时可领取体验套餐横幅：只在桌面且已登录时查询。
+                  放在工作区层是因为它属于 app 级提示，但要盖在 workspace 壳层之上；
+                  设置页打开时随壳层一起 inert（外层已设 inert），不需要额外判断。 */}
+              <ManualClaimPlanBanner
+                codingPlanService={workspaceScopedServices.codingPlanSubscriptionService}
+                enabled={isDesktop === true}
+                userId={user?.id ?? null}
+              />
               <StableWorkspaceApp
                 services={workspaceScopedServices}
                 baseFeedbackService={baseFeedbackService}

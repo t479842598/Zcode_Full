@@ -45,6 +45,11 @@ import type {
   DynamicWorkflowClientConfig,
 } from "@zcode/shared";
 import type { CaptchaConfig } from "./captchaConfig.js";
+import type {
+  ManualClaimPlanClaimInput,
+  ManualClaimPlanClaimResult,
+  ManualClaimPlanPreviewResult,
+} from "./manualClaimPlan.js";
 import type { ModelSelectionView } from "@zcode/provider";
 import { ServiceChannels } from "@zcode/shared";
 import { createServiceDescriptor } from "../descriptors.js";
@@ -61,6 +66,10 @@ export interface ICodingPlanSubscriptionService {
   getStaticProducts(): Promise<CodingPlanStaticProductsConfig>;
   getStaticTeamProducts(): Promise<CodingPlanStaticTeamProductsConfig>;
   getStartPlanPreview(): Promise<StartPlanPreviewConfig | null>;
+  /** 官方限时可领取体验套餐列表；未登录返回空列表。 */
+  getManualClaimPlanPreviews(): Promise<ManualClaimPlanPreviewResult>;
+  /** 领取指定体验套餐（需验证码参数）。 */
+  claimManualPlan(input: ManualClaimPlanClaimInput): Promise<ManualClaimPlanClaimResult>;
   getCaptchaConfig(): Promise<CaptchaConfig | null>;
   /** 闲时任务灰度配置：forceRefresh 供入口打开时补拉（绕过 1h 快照缓存）。 */
   getOffPeakClientConfig(options?: { forceRefresh?: boolean }): Promise<OffPeakClientConfig>;
