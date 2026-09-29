@@ -20,6 +20,7 @@ import {
   type CreateTempTextAttachmentRequest,
   type UpdateStatePayload,
   type WindowControlsOverlayReadyPayload,
+  type WriteInfiniteGen4EnabledRequest,
 } from "@zcode/shared";
 import { getInstalledEditors } from "./editors.js";
 import { getApplicationIcon } from "./applicationIcons.js";
@@ -51,6 +52,7 @@ import {
   migrateLegacyCommonMcp,
   saveCliMcpToUserDirectory,
 } from "./mcpUserDirectory/index.js";
+import { readInfiniteGen4State, writeInfiniteGen4Enabled } from "./infiniteGen4/index.js";
 import { createTempTextAttachment } from "./tempTextAttachment.js";
 import { registerDesktopSaveFileIpcHandler } from "./desktopSaveFile.js";
 import { registerDesktopPrintToPdfIpcHandler } from "./desktopPrintToPdf.js";
@@ -189,6 +191,14 @@ export function registerPlatformIpcHandlers(options: {
     async (_event, payload?: LoadCliMcpFromUserDirectoryRequest) => {
       return loadCliMcpFromUserDirectory(payload);
     },
+  );
+
+  // 无限四代内核：读状态（UI 状态条轮询）+ 写开关（下一次 hook 即生效）。
+  ipcMain.handle(PlatformChannels.ReadInfiniteGen4State, async () => readInfiniteGen4State());
+  ipcMain.handle(
+    PlatformChannels.WriteInfiniteGen4Enabled,
+    async (_event, payload: WriteInfiniteGen4EnabledRequest) =>
+      writeInfiniteGen4Enabled(Boolean(payload?.enabled)),
   );
 
   ipcMain.handle(

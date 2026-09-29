@@ -34,6 +34,9 @@ export function createDesktopPlatform(options: {
     loadMcpFromUserDirectory: (payload) => window.zcode.loadMcpFromUserDirectory(payload),
     saveMcpToUserDirectory: (payload) => window.zcode.saveMcpToUserDirectory(payload),
     migrateLegacyCommonMcp: (payload) => window.zcode.migrateLegacyCommonMcp(payload),
+    // 无限四代内核状态条：读状态 / 写开关（内置插件，见 apps/zcode-cli/packages/infinite-gen-4-plugin）。
+    readInfiniteGen4State: () => window.zcode.readInfiniteGen4State(),
+    writeInfiniteGen4Enabled: (payload) => window.zcode.writeInfiniteGen4Enabled(payload),
     openExternal: (url) => window.zcode.openExternal(url),
     openFeedback: () => window.zcode.executeDesktopCommand(DesktopCommandIds.OpenFeedback),
     openCommunity: () => window.zcode.executeDesktopCommand(DesktopCommandIds.OpenCommunity),

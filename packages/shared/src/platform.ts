@@ -12,6 +12,7 @@ import type {
   MigrateLegacyCommonMcpResult,
   SaveCliMcpToUserDirectoryRequest,
 } from "./mcp.js";
+import type { InfiniteGen4State, WriteInfiniteGen4EnabledRequest } from "./infiniteGen4.js";
 import type { OAuthStateRegistration } from "./oauth.js";
 import type { AppSettings, Locale } from "./protocol.js";
 import type { ArmsCustomEventPayload, RendererTelemetryEventPayload } from "./telemetry.js";
@@ -627,6 +628,20 @@ export interface IPlatformService {
   migrateLegacyCommonMcp?(
     payload?: MigrateLegacyCommonMcpRequest,
   ): Promise<MigrateLegacyCommonMcpResult>;
+
+  /**
+   * 读无限四代（infinite-gen-4）内核状态；供对话界面状态条轮询。
+   *
+   * 内核由内置插件 `infinite-gen-4-plugin` 通过 hook 注入，状态写在
+   * `~/.zcode/infinite-gen-4/state.json`（hook 是独立进程，文件是唯一共享面）。
+   * 普通 Web / 手机远控没有该能力，方法缺省时状态条不渲染。
+   */
+  readInfiniteGen4State?(): Promise<InfiniteGen4State | null>;
+
+  /** 切换无限四代内核注入开关；写入后下一次 SessionStart / UserPromptSubmit hook 即按新值行事。 */
+  writeInfiniteGen4Enabled?(
+    payload: WriteInfiniteGen4EnabledRequest,
+  ): Promise<{ success: boolean; error?: string }>;
 
   /** 打开外部 URL（用于 OAuth 跳转浏览器） */
   openExternal(url: string): void;

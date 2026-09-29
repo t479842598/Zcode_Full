@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { UpdateStatusButton } from "@/UpdateStatusButton.js";
+import { InfiniteGen4Badge } from "@/InfiniteGen4Badge.js";
 import { DesktopTopOverlayActionButton } from "@/DesktopTopOverlayActionButton.js";
 import {
   createWindowsCaptionControlsStyle,
@@ -202,6 +203,24 @@ export function DesktopTopOverlay({
               <MessageCirclePlus className="size-4" />
             </DesktopTopOverlayActionButton>
           </div>
+
+          {/* 无限四代内核状态条 + 注入开关（内置插件，见 apps/zcode-cli/packages/infinite-gen-4-plugin）。
+              内核由 hook 注入，状态经 IPC 读 ~/.zcode/infinite-gen-4/state.json。
+              非桌面端（Web / 手机远控）没有这两个能力，组件自行返回 null。 */}
+          <InfiniteGen4Badge
+            readState={
+              platform.readInfiniteGen4State
+                ? () => platform.readInfiniteGen4State!()
+                : undefined
+            }
+            writeEnabled={
+              platform.writeInfiniteGen4Enabled
+                ? async (enabled: boolean) => {
+                    await platform.writeInfiniteGen4Enabled!({ enabled });
+                  }
+                : undefined
+            }
+          />
 
           {/* <div className="flex items-center [app-region:no-drag]"> */}
           {/* 侧栏收起后，更新按钮之前会跟着“展开态的容器宽度阈值”一起被隐藏。

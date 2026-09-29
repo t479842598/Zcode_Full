@@ -66,6 +66,8 @@ import type {
   LoadCliMcpFromUserDirectoryRequest,
   MigrateLegacyCommonMcpRequest,
   SaveCliMcpToUserDirectoryRequest,
+  InfiniteGen4State,
+  WriteInfiniteGen4EnabledRequest,
   SaveFileRequest,
   SaveFileResult,
   PrintPageToPdfResult,
@@ -282,6 +284,11 @@ contextBridge.exposeInMainWorld("zcode", {
     ipcRenderer.invoke(PlatformChannels.SaveMcpToUserDirectory, payload),
   migrateLegacyCommonMcp: (payload?: MigrateLegacyCommonMcpRequest) =>
     ipcRenderer.invoke(PlatformChannels.MigrateLegacyCommonMcp, payload ?? {}),
+  // 无限四代内核：状态条读 + 开关写（内置插件，见 infinite-gen-4-plugin）。
+  readInfiniteGen4State: (): Promise<InfiniteGen4State | null> =>
+    ipcRenderer.invoke(PlatformChannels.ReadInfiniteGen4State),
+  writeInfiniteGen4Enabled: (payload: WriteInfiniteGen4EnabledRequest) =>
+    ipcRenderer.invoke(PlatformChannels.WriteInfiniteGen4Enabled, payload),
   /** renderer 日志通过 IPC 传到 main 进程统一存储 */
   log: (level: "info" | "warn" | "error", args: unknown[]) =>
     ipcRenderer.send(PlatformChannels.Log, { level, args }),

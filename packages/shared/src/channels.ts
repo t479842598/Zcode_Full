@@ -8,6 +8,7 @@ import type {
   SaveCliMcpToUserDirectoryRequest,
 } from "./index.js";
 import type { OAuthStateRegistration } from "./oauth.js";
+import type { InfiniteGen4State, WriteInfiniteGen4EnabledRequest } from "./infiniteGen4.js";
 import type { AppSettings, Locale } from "./protocol.js";
 import type { StorageCleanRequest, StorageCleanResult, StorageUsageSnapshot } from "./storage.js";
 import type {
@@ -203,6 +204,10 @@ export const PlatformChannels = {
   LoadMcpFromUserDirectory: "zcode:load-mcp-from-user-directory",
   /** Renderer → Main：保存 CLI MCP 配置到用户目录 */
   SaveMcpToUserDirectory: "zcode:save-mcp-to-user-directory",
+  /** Renderer → Main：读无限四代（infinite-gen-4）内核状态（内置插件 hook 写入的 state.json） */
+  ReadInfiniteGen4State: "zcode:read-infinite-gen-4-state",
+  /** Renderer → Main：切换无限四代内核注入开关（写 state.json，下一次 hook 即按新值行事） */
+  WriteInfiniteGen4Enabled: "zcode:write-infinite-gen-4-enabled",
   /** Renderer 日志转发到 main 进程统一存储 */
   Log: "zcode:log",
   /** Renderer → Main：同步当前窗口所有 tab 的 workspace 路径 */
@@ -759,6 +764,14 @@ export interface PlatformChannelMap {
   [PlatformChannels.LoadMcpFromUserDirectory]: {
     request: LoadCliMcpFromUserDirectoryRequest;
     response: LoadCliMcpFromUserDirectoryResult;
+  };
+  [PlatformChannels.ReadInfiniteGen4State]: {
+    request: void;
+    response: InfiniteGen4State | null;
+  };
+  [PlatformChannels.WriteInfiniteGen4Enabled]: {
+    request: WriteInfiniteGen4EnabledRequest;
+    response: { success: boolean; error?: string };
   };
   [PlatformChannels.SaveMcpToUserDirectory]: {
     request: SaveCliMcpToUserDirectoryRequest;
