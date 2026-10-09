@@ -12,7 +12,7 @@ import {
   ZCODE_ENV,
   ZCODE_PRODUCT_FLAVOR,
   ZCODE_RUNTIME_ENV_KEY,
-  ZCODE_VERSION,
+  ZCODE_REPORT_VERSION,
   DEFAULT_ZCODE_ENDPOINT_ORIGIN,
   buildZCodeToolEnvPassthroughEnv,
   resolveRuntimeZCodeEndpointOrigin,
@@ -207,7 +207,7 @@ function resolveDevelopmentMockCdnDir(): string {
 
 function resolveAvailableDevelopmentMockCdnDir(): string | undefined {
   const mockCdnDir = resolveDevelopmentMockCdnDir();
-  const releaseDir = join(mockCdnDir, "releases", ZCODE_VERSION);
+  const releaseDir = join(mockCdnDir, "releases", ZCODE_REPORT_VERSION);
   // 开发态 mock-cdn 是可选离线缓存。当前版本目录不存在时继续传 mockCdnDir，
   // 会让 WSL/SSH 重连先命中一个必然缺失的本地路径，遮蔽已有的 CDN/cache fallback。
   return existsSync(releaseDir) ? mockCdnDir : undefined;
@@ -235,7 +235,7 @@ function resolveRemoteCdnBaseUrls(
     ...options,
     env: ZCODE_ENV,
     overrideBaseUrl: raw,
-    version: ZCODE_VERSION,
+    version: ZCODE_REPORT_VERSION,
   });
 }
 
@@ -557,7 +557,7 @@ export function buildHostProcessEnv(hostProcessLocalEnv: Record<string, string>)
     ...dynamicWorkflowModeHostEnv,
     // 模型请求默认 header 由 agent 进程构造，过去只继承 shell env 导致桌面启动时拿不到 app 版本。
     // 这里从 main 进程显式下发，agent 子进程继承 host env 后即可稳定写入请求 header。
-    [ZCODE_APP_VERSION_ENV]: ZCODE_VERSION,
+    [ZCODE_APP_VERSION_ENV]: ZCODE_REPORT_VERSION,
     ...(dataBaseDir !== homedir() ? { ZCODE_DATA_BASE_DIR: dataBaseDir } : {}),
     ...(windowsAppInstallDir ? { [ZCODE_WINDOWS_APP_INSTALL_DIR_ENV]: windowsAppInstallDir } : {}),
     ...(bundledCuaHelperAppPath

@@ -72,6 +72,7 @@ import {
   ZCODE_PRODUCT_FLAVOR,
   DEFAULT_ZCODE_ENDPOINT_ORIGIN,
   DEFAULT_LOCALE,
+  ZCODE_REPORT_VERSION,
   ZCODE_VERSION,
   ZCODE_TELEMETRY_ENABLED,
   ZCODE_ARMS_RUM_ENDPOINT,
@@ -791,14 +792,14 @@ const remoteSessionManager = createRemoteWorkspaceSessionManager({
 const deviceMid = ensureDesktopDeviceMidSync();
 // 帮助配置是公开读取，不能复用下面附带账号鉴权的灰度响应缓存。
 const readHelpConfig = createDesktopHelpConfigReader({
-  appVersion: ZCODE_VERSION || app.getVersion(),
+  appVersion: ZCODE_REPORT_VERSION || app.getVersion(),
   deviceMid,
   resolveEndpointOrigin: async () => DEFAULT_ZCODE_ENDPOINT_ORIGIN,
 });
 // 同一个 /api/v1/client/configs fetcher 供两个灰度 rollout 共用（请求参数与鉴权完全一致，
 // 各自独立缓存/去重，服务端按 data.configs.<key> 区分功能）。
 const electronClientConfigsFetcher = createElectronDesktopContextPromptConfigFetcher({
-  appVersion: ZCODE_VERSION || app.getVersion(),
+  appVersion: ZCODE_REPORT_VERSION || app.getVersion(),
   deviceMid,
   resolveEndpointOrigin: async () => DEFAULT_ZCODE_ENDPOINT_ORIGIN,
 });
@@ -2176,7 +2177,7 @@ app.whenReady().then(async () => {
     armsCustomContext: {
       deviceMid,
       platform: process.platform,
-      appVersion: ZCODE_VERSION,
+      appVersion: ZCODE_REPORT_VERSION,
       armsEnv: mapZCodeEnvToArmsRumEnv(desktopRuntimeEnv),
     },
     finalArmsCustomEventE2EEnabled: shouldEnableE2ETestBridge(process.env),
@@ -2204,25 +2205,25 @@ app.whenReady().then(async () => {
     configureDesktopStabilityTelemetry({
       deviceMid,
       platform: process.platform,
-      appVersion: ZCODE_VERSION,
+      appVersion: ZCODE_REPORT_VERSION,
       armsEnv: mapZCodeEnvToArmsRumEnv(desktopRuntimeEnv),
     });
     configureDesktopResourceTelemetry({
       deviceMid,
       platform: process.platform,
-      appVersion: ZCODE_VERSION,
+      appVersion: ZCODE_REPORT_VERSION,
       armsEnv: mapZCodeEnvToArmsRumEnv(desktopRuntimeEnv),
     });
     configureDesktopNetworkTelemetry({
       deviceMid,
       platform: process.platform,
-      appVersion: ZCODE_VERSION,
+      appVersion: ZCODE_REPORT_VERSION,
       armsEnv: mapZCodeEnvToArmsRumEnv(desktopRuntimeEnv),
     });
   }
   configureDesktopMcpTelemetry({
     deviceMid,
-    appVersion: ZCODE_VERSION,
+    appVersion: ZCODE_REPORT_VERSION,
     armsEnv: mapZCodeEnvToArmsRumEnv(desktopRuntimeEnv),
   });
   registerDesktopStabilityMonitors(logger, crashCapturePaths);
@@ -2232,7 +2233,7 @@ app.whenReady().then(async () => {
   const defaultDataBaseDir = process.env.HOME?.trim() || homedir();
   registerDesktopZCodeDataSizeTelemetry({
     context: {
-      appVersion: ZCODE_VERSION,
+      appVersion: ZCODE_REPORT_VERSION,
       armsEnv: mapZCodeEnvToArmsRumEnv(desktopRuntimeEnv),
       dataRootKind:
         resolve(getDataBaseDir()) === resolve(defaultDataBaseDir) ? "default" : "custom",

@@ -1,5 +1,5 @@
 import type { ApiClient } from "@zcode/shared";
-import { buildOfficialZCodeApiUrl, ZCODE_VERSION } from "@zcode/shared";
+import { buildOfficialZCodeApiUrl, ZCODE_REPORT_VERSION } from "@zcode/shared";
 import { readApiJson } from "../providers/api/apiJson.js";
 
 // 归因类型与纯函数在 manualClaimPlanFailure.ts（零依赖，UI 包直接消费）。
@@ -165,7 +165,7 @@ export async function fetchManualClaimPlanPreviews(
   if (!token) return { plans: [] };
 
   const url = new URL(buildOfficialZCodeApiUrl("/api/v1/zcode-plan/billing/preview"));
-  url.searchParams.set("app_version", ZCODE_VERSION);
+  url.searchParams.set("app_version", ZCODE_REPORT_VERSION);
   url.searchParams.set("platform", resolveClientPlatformKey());
 
   const envelope = await readApiJson<ManualClaimPlanPreviewEnvelope>(
@@ -242,7 +242,7 @@ export async function claimManualPlan(
         "Content-Type": "application/json",
         "X-Aliyun-Captcha-Verify-Param": input.captchaVerifyParam,
         ...(input.captchaRegion ? { "X-Aliyun-Captcha-Verify-Region": input.captchaRegion } : {}),
-        "X-ZCode-App-Version": ZCODE_VERSION,
+        "X-ZCode-App-Version": ZCODE_REPORT_VERSION,
         "X-Platform": resolveClientPlatformKey(),
       },
       body: JSON.stringify({ plan_id: input.planId }),

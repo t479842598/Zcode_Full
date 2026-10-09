@@ -31,7 +31,7 @@ import {
 import {
   CodingPlanWebviewChannels,
   type CodingPlanPurchaseCompletePayload,
-  ZCODE_VERSION,
+  ZCODE_REPORT_VERSION,
 } from "@zcode/shared";
 
 interface CodingPlanEmbeddedWebviewDialogProps {
@@ -189,7 +189,7 @@ export function CodingPlanEmbeddedWebviewDialog({
           funnelContext,
           deviceMid,
           userId,
-          appVersion: ZCODE_VERSION,
+          appVersion: ZCODE_REPORT_VERSION,
         });
         const script = createCodingPlanAuthInjectionScript({
           provider,

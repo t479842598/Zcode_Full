@@ -5,6 +5,7 @@ import armsRum from "@arms/rum-electron";
 import { ZCODE_AGENT_LIFECYCLE_LOG_MARKER } from "@zcode/shared/process-diagnostic";
 import {
   ZCODE_ARMS_RUM_ENDPOINT,
+  ZCODE_REPORT_VERSION,
   ZCODE_VERSION,
   ZCODE_TELEMETRY_ENABLED,
   mapZCodeEnvToArmsRumEnv,
@@ -169,7 +170,7 @@ function startArmsRum(): Promise<void> {
   return armsRum
     .init({
       enable: true,
-      version: ZCODE_VERSION,
+      version: ZCODE_REPORT_VERSION,
       endpoint: ZCODE_ARMS_RUM_ENDPOINT,
       env: armsRumEnv,
       // Browser SDK 由 SDK 在 dom-ready 经 executeJavaScript 注入；勿再在 preload/renderer 手动 init，避免重复采集
@@ -177,7 +178,7 @@ function startArmsRum(): Promise<void> {
       browserCollectors: { ...ARMS_BROWSER_COLLECTORS },
       app: {
         name: runtimeApplicationName,
-        version: ZCODE_VERSION,
+        version: ZCODE_REPORT_VERSION,
         env: armsRumEnv,
         type: "electron",
         framework: "react",

@@ -526,7 +526,7 @@ import {
   ZAI_PROVIDER_ID,
   zcodeAccountAccessSchema,
   zcodeProviderAccountAccessSchema,
-  ZCODE_VERSION,
+  ZCODE_REPORT_VERSION,
   ZCODE_ENV,
   buildOfficialZCodeApiUrl,
 } from "@zcode/shared";
@@ -1523,7 +1523,7 @@ export function createLocalServices(options: {
     zcodeBuiltinEnvironment: {
       environmentConfigRoot: resolveAppConfigDir(),
       platform: clientConfigPlatform,
-      appVersion: ZCODE_VERSION,
+      appVersion: ZCODE_REPORT_VERSION,
       resolveEndpointOrigin: resolveCurrentZCodeEndpointOrigin,
       onRefreshResult: (event) => {
         if (event.result === "updated")
@@ -1535,7 +1535,7 @@ export function createLocalServices(options: {
           apiClient,
           endpointOrigin,
           signal,
-          appVersion: ZCODE_VERSION,
+          appVersion: ZCODE_REPORT_VERSION,
           platform: clientConfigPlatform,
         }),
     },
@@ -2487,7 +2487,7 @@ export function createLocalServices(options: {
         apiClient,
         resolveRequestContext: async () => ({
           endpointOrigin: await resolveCurrentZCodeEndpointOrigin(),
-          appVersion: ZCODE_VERSION,
+          appVersion: ZCODE_REPORT_VERSION,
           platform: `${process.platform}-${process.arch}`,
         }),
       }),

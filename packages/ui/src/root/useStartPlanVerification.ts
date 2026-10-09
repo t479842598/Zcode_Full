@@ -1,8 +1,12 @@
 import { useEffect } from "react";
-import type { IServiceAccessor } from "@zcode/services";
+import {
+  isEnabledCaptchaConfig,
+  isModelRequestVerificationRequired,
+  type IServiceAccessor,
+} from "@zcode/services";
 import type { ZCodeProviderRuntimeHeadersRequestParams } from "@zcode/shared";
 import { logger } from "@/logger.js";
-import { verifyStartPlanCaptcha } from "./startPlanCaptcha.js";
+import { resolveStartPlanCaptchaFailureReason, verifyStartPlanCaptcha } from "./startPlanCaptcha.js";
 
 /** 仅桌面 Host 收到请求级挑战时验证；移动端不复制账号令牌或安全证明。 */
 export function useStartPlanVerification(
@@ -25,17 +29,23 @@ export function useStartPlanVerification(
           let captchaVerifyParam: string | undefined;
           let captchaRegion: string | undefined;
           let verificationNotRequired = false;
+          let failureReason: string | undefined;
           try {
             const config = await services.codingPlanSubscriptionService.getCaptchaConfig();
             if (!config) throw new Error("Start Plan verification unavailable");
-            if (!config.enabled) verificationNotRequired = true;
-            else {
+            // 官方 3.14.4 起可能以 `captcha.skip_model_request` 关闭模型请求侧校验
+            // （enabled 仍为 true）。此时不唤起 SDK，按"无需验证"回执。
+            if (!isModelRequestVerificationRequired(config)) verificationNotRequired = true;
+            else if (isEnabledCaptchaConfig(config)) {
               captchaRegion = config.region;
               captchaVerifyParam = await verifyStartPlanCaptcha(config, controller.signal, locale);
-            }
+            } else throw new Error("Start Plan verification unavailable");
           } catch (error) {
+            // 归因原因必须落到日志：此前五类断点折成同一句，线上无法定位环节。
+            failureReason = resolveStartPlanCaptchaFailureReason(error);
             logger.warn("[start-plan] 本次请求验证失败", {
-              reason: error instanceof Error ? error.message : "unknown",
+              reason: failureReason,
+              detail: error instanceof Error ? error.message : "unknown",
             });
           }
           if (controller.signal.aborted) return;

@@ -1,5 +1,9 @@
 import type { ZCodeProviderRuntimeHeadersRequestParams } from "@zcode/shared";
-import type { CaptchaConfig } from "../coding-plan-subscription/captchaConfig.js";
+import {
+  isEnabledCaptchaConfig,
+  isModelRequestVerificationRequired,
+  type CaptchaConfig,
+} from "../coding-plan-subscription/captchaConfig.js";
 
 export const START_PLAN_VERIFY_PARAM_HEADER = "X-Aliyun-Captcha-Verify-Param";
 export const START_PLAN_VERIFY_REGION_HEADER = "X-Aliyun-Captcha-Verify-Region";
@@ -28,8 +32,10 @@ export function startPlanVerificationHeaders(
   verification: { captchaVerifyParam: string; captchaRegion?: string },
 ): Record<string, string> {
   if (!config) throw new Error("Start Plan verification is unavailable");
-  // 官方配置明确关闭时无需额外验证；缺失配置绝不能当作关闭。
-  if (!config.enabled) return {};
+  // 官方配置明确关闭、或服务端以 skip_model_request 关闭模型请求校验时，无需额外验证头。
+  // 缺失配置绝不能当作关闭（fail-closed）。
+  if (!isModelRequestVerificationRequired(config)) return {};
+  if (!isEnabledCaptchaConfig(config)) throw new Error("Start Plan verification is unavailable");
   const param = verification.captchaVerifyParam.trim();
   if (!param || param.length > 8192) throw new Error("Start Plan verification failed");
   if (verification.captchaRegion && verification.captchaRegion !== config.region) {

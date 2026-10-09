@@ -3,6 +3,7 @@ import {
   isCurrentVerificationRequest,
   startPlanVerificationHeaders,
 } from "./startPlanVerification.js";
+import { isModelRequestVerificationRequired } from "#src/coding-plan-subscription/captchaConfig.js";
 import { requestPluginReferenceCatalog } from "#src/zcode-agent/pluginReferenceCatalogRequest.js";
 import {
   localTtftFactsSchema,
@@ -4844,10 +4845,14 @@ export function createZCodeAgentService(
       try {
         const config = await options?.resolveStartPlanCaptchaConfig?.();
         if (!config) throw new Error("Start Plan verification is unavailable");
-        if (params.verificationNotRequired !== !config.enabled) {
+        // 是否需要验证必须与 UI 判定同源：官方 3.14.4 起可能以 skip_model_request 关闭
+        // 模型请求侧校验（enabled 仍为 true）。只比对 enabled 会把 skip 场景误判成
+        // "state changed" 并拒绝回执，正是「一直过不了验证码」的一环。
+        const verificationRequired = isModelRequestVerificationRequired(config);
+        if (params.verificationNotRequired !== !verificationRequired) {
           throw new Error("Start Plan verification state changed");
         }
-        if (config.enabled && !params.captchaVerifyParam) {
+        if (verificationRequired && !params.captchaVerifyParam) {
           throw new Error("Start Plan verification cancelled");
         }
         const headers = startPlanVerificationHeaders(config, {
