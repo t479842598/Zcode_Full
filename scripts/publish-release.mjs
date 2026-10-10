@@ -243,7 +243,19 @@ async function main() {
     );
   }
 
-  const sshOpts = ["-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=20"];
+  // 显式关闭公钥认证：服务器同时开放 publickey 与 password 时，sshpass 的密码
+  // 响应会被 publickey 协商吞掉（实测 Permission denied ×2 后直接断开）；
+  // 指定 password 后方能稳定登录。
+  const sshOpts = [
+    "-o",
+    "StrictHostKeyChecking=no",
+    "-o",
+    "ConnectTimeout=20",
+    "-o",
+    "PubkeyAuthentication=no",
+    "-o",
+    "PreferredAuthentications=password",
+  ];
   const remoteDir = `${REMOTE_ROOT}/${PLATFORM}`;
 
   // 1. 准备远端目录

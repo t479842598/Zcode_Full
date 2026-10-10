@@ -792,6 +792,9 @@ function applyManifestUpdateProvider(options: InitAutoUpdaterOptions): void {
   autoUpdater.setFeedURL({
     provider: "custom",
     updateProvider: ManifestUpdateProvider,
+    // endpointOrigin 只作兜底：ManifestUpdateProvider 的解析顺序是
+    // resolveEndpointOrigin（自托管源）→ endpointOrigin（这里）→ 官方默认。
+    // 打包态下 resolveEndpointOrigin 才带回真实自托管源，故此处保持官方默认即可。
     endpointOrigin: DEFAULT_ZCODE_ENDPOINT_ORIGIN,
     ...(manifestUrl ? { manifestUrl } : {}),
     releasePlatform: getElectronReleasePlatform(),

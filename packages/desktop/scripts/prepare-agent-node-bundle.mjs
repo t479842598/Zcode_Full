@@ -114,16 +114,6 @@ const officialPluginPackages = [
   },
 
   {
-    // 无限四代（dsh-infinite-gen-4）内核的 ZCode 内置版。
-    // 上游是 DeepSeek Harness 插件，用 ctx.systemPrompt.section 注入系统提示词；
-    // ZCode 没有该 API，等价通道是 SessionStart hook 的 additionalContext。
-    // 纯 JS + 静态载荷，不需要构建步骤（requiresRuntime 留空）。
-    packageName: "@zcode/infinite-gen-4-plugin",
-    relativePath: "apps/zcode-cli/packages/infinite-gen-4-plugin",
-    stagedPath: "packages/infinite-gen-4-plugin",
-  },
-
-  {
     // dsh-purge 的 ZCode 内置版。上游是 DeepSeek Harness 的 cordis 插件，靠字符串替换
     // 改写 DSH 源码里的弱框定与身份句；ZCode 没有那些靶点（已核对
     // core/src/context/sections/request-user-context.ts 与 builder.ts），
