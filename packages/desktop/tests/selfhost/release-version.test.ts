@@ -7,7 +7,9 @@ import { stripSelfhostSuffix, ZCODE_REPORT_VERSION } from "../../../shared/src/v
 
 // 官方实际发行过的版本（取证：docs/2026-10-08-official-upstream-delta.md）。
 // GitHub tag 只有 v3.14.3；官方 CDN 更新清单已到 3.14.4。
-const OFFICIAL_RELEASED_VERSIONS = ["3.14.3", "3.14.4"] as const;
+// 3.14.5：官方 CDN 清单实测返回 version: 3.14.5（2026-10-10 复核），
+// 但官方 GitHub 未发对应 tag——服务端已按 CDN 号分发，故纳入白名单。
+const OFFICIAL_RELEASED_VERSIONS = ["3.14.3", "3.14.4", "3.14.5"] as const;
 
 test("selfhost version uses official number plus selfhost suffix", async () => {
   const root = new URL("../../../../package.json", import.meta.url);
