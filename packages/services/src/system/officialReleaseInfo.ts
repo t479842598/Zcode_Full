@@ -2,6 +2,8 @@ import { compareSemverVersions } from "@zcode/shared";
 import { parse as parseYaml } from "yaml";
 
 const OFFICIAL_RELEASE_MANIFEST_PATH = "/api/v1/releases/electron/manifest";
+/** 自托管分发服务器；检查新版本的请求必须落在自己的服务器上，而不是官方。 */
+const SELFHOST_RELEASE_ORIGIN = "https://zcode.tang74.top";
 const PLATFORM_NAME: Record<string, string> = {
   darwin: "darwin",
   win32: "windows",
@@ -9,7 +11,7 @@ const PLATFORM_NAME: Record<string, string> = {
 };
 const ARCH_NAME: Record<string, string> = { arm64: "aarch64", x64: "x86_64", ia32: "x86" };
 export function officialReleaseSourceUrl(platform = process.platform, arch = process.arch): string {
-  const url = new URL(OFFICIAL_RELEASE_MANIFEST_PATH, "https://zcode.z.ai");
+  const url = new URL(OFFICIAL_RELEASE_MANIFEST_PATH, SELFHOST_RELEASE_ORIGIN);
   url.searchParams.set(
     "platform",
     `${PLATFORM_NAME[platform] ?? platform}-${ARCH_NAME[arch] ?? arch}`,
@@ -18,8 +20,8 @@ export function officialReleaseSourceUrl(platform = process.platform, arch = pro
   return url.href;
 }
 export const OFFICIAL_RELEASE_SOURCE_URL = officialReleaseSourceUrl();
-export const OFFICIAL_RELEASE_PAGE_URL = "https://zcode.z.ai/cn/changelog";
-const OFFICIAL_RELEASE_EN_PAGE_URL = "https://zcode.z.ai/en/changelog";
+export const OFFICIAL_RELEASE_PAGE_URL = `${SELFHOST_RELEASE_ORIGIN}/cn/changelog`;
+const OFFICIAL_RELEASE_EN_PAGE_URL = `${SELFHOST_RELEASE_ORIGIN}/en/changelog`;
 
 export interface OfficialReleaseInfo {
   version: string;
