@@ -30,6 +30,12 @@ vi.mock("@/WorkspaceWebRemoteControlTrigger.js", () => ({
     }),
 }));
 
+// 自托管：移动端远程控制入口是自建弹窗（自建中继桥），不再走官方闭源 V4 trigger。
+vi.mock("@/WebRemoteControlDialog.js", () => ({
+  WebRemoteControlDialog: ({ open }: { open: boolean }) =>
+    open ? createElement("div", { "data-testid": "web-remote-control-dialog" }) : null,
+}));
+
 vi.mock("@/hooks/usePlatform.js", () => ({
   usePlatform: () => ({
     executeDesktopCommand: vi.fn(),
@@ -381,7 +387,7 @@ describe("WorkspaceSidebarFooter web remote control tooltip", () => {
     ).toBeNull();
   });
 
-  it("does not wrap the remote control trigger in a second tooltip", () => {
+  it("renders the self-hosted remote control entry instead of the official trigger", () => {
     const html = renderToStaticMarkup(
       createElement(WorkspaceSidebarFooter, {
         theme: "dark",
@@ -390,11 +396,19 @@ describe("WorkspaceSidebarFooter web remote control tooltip", () => {
         onThemeChange: () => {},
         onSettingsButtonClick: () => {},
         workspacePath: "/tmp/project",
+        // 官方 V4 trigger 的入参在类型上仍然保留（调用方签名不变），但不参与渲染。
+        workspaceRemoteSessionId: "remote-session-1",
+        activeTaskId: "task-1",
         isDesktop: true,
       }),
     );
 
-    expect(html).toContain('data-testid="web-remote-control-trigger"');
-    expect(html).not.toContain('data-tooltip-title="webRemoteControl.trigger"');
+    // 自托管入口：自建按钮（Smartphone 图标）+ 一层 ControlHintTooltip 提示。
+    expect(html).toContain('data-testid="web-remote-control-button"');
+    expect(html).toContain('data-tooltip-title="webRemoteControl.trigger"');
+    // 官方闭源 V4 trigger 不再渲染，因此也不存在第二层 tooltip。
+    expect(html).not.toContain('data-testid="web-remote-control-trigger"');
+    // 入口按钮的无障碍名与提示同源，图标入口不能只剩一个 aria 空按钮。
+    expect(html).toContain('aria-label="webRemoteControl.trigger"');
   });
 });

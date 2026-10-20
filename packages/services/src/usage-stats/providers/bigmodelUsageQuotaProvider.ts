@@ -28,7 +28,7 @@ import {
   isZaiCodingPlanProviderId,
   buildBigModelApiUrl,
   buildRuntimeZaiBusinessUrl,
-  buildRuntimeZCodeApiUrl,
+  buildOfficialZCodeApiUrl,
 } from "@zcode/shared";
 import type { ProviderFamilyDomain } from "@zcode/shared";
 import { createServiceLogger } from "#src/logger/serviceLogger.js";
@@ -526,7 +526,7 @@ export class BigModelUsageQuotaProvider {
     const authorization = await this.resolveCodingPlanResetAuthorization(request);
     const payload = await readCodingPlanResetApiJson(
       this.apiClient,
-      buildRuntimeZCodeApiUrl(this.env, `${CODING_PLAN_RESET_BASE_PATH}/status`),
+      buildOfficialZCodeApiUrl(`${CODING_PLAN_RESET_BASE_PATH}/status`),
       {
         method: "GET",
         timeoutMs: REQUEST_TIMEOUT_MS,
@@ -559,7 +559,7 @@ export class BigModelUsageQuotaProvider {
     const authorization = await this.resolveCodingPlanResetAuthorization(request);
     const payload = await readCodingPlanResetApiJson(
       this.apiClient,
-      buildRuntimeZCodeApiUrl(this.env, `${CODING_PLAN_RESET_BASE_PATH}/use`),
+      buildOfficialZCodeApiUrl(`${CODING_PLAN_RESET_BASE_PATH}/use`),
       {
         method: "POST",
         timeoutMs: REQUEST_TIMEOUT_MS,
@@ -589,7 +589,7 @@ export class BigModelUsageQuotaProvider {
     try {
       payload = await readCodingPlanResetApiJson(
         this.apiClient,
-        buildRuntimeZCodeApiUrl(this.env, `${CODING_PLAN_RESET_BASE_PATH}/opportunity`),
+        buildOfficialZCodeApiUrl(`${CODING_PLAN_RESET_BASE_PATH}/opportunity`),
         {
           method: "POST",
           timeoutMs: REQUEST_TIMEOUT_MS,
@@ -635,7 +635,7 @@ export class BigModelUsageQuotaProvider {
     const authorization = await this.resolveCodingPlanResetAuthorization(request);
     const payload = await readCodingPlanResetApiJson(
       this.apiClient,
-      buildRuntimeZCodeApiUrl(this.env, `${CODING_PLAN_RESET_BASE_PATH}/history/read`),
+      buildOfficialZCodeApiUrl(`${CODING_PLAN_RESET_BASE_PATH}/history/read`),
       {
         method: "POST",
         timeoutMs: REQUEST_TIMEOUT_MS,

@@ -1,6 +1,5 @@
 import {
   readRequestVerificationConfig,
-  requestVerificationClaimHeaders,
   isRequestVerificationMessage,
   type RequestVerificationClientConfig,
 } from "@zcode/shared";
@@ -56,25 +55,30 @@ import type {
   EnterpriseCodingPlanProjectApiKeyUnavailableReason,
   EnterpriseCodingPlanProjectContext,
   StartPlanPreviewConfig,
-  ManualClaimPlanClaimRequest,
-  ManualClaimPlanClaimResult,
-  ManualClaimPlanPreviewSnapshot,
   ZCodeModelContextBudgetStrategy,
   DynamicWorkflowClientConfig,
 } from "@zcode/shared";
 import type { ModelSelectionView } from "@zcode/provider";
+import { parseCaptchaConfig, type CaptchaConfig } from "./captchaConfig.js";
+import {
+  claimManualPlan,
+  fetchManualClaimPlanPreviews,
+  type ManualClaimPlanClaimRequest,
+  type ManualClaimPlanClaimResult,
+  type ManualClaimPlanPreviewSnapshot,
+} from "./manualClaimPlan.js";
 import type { OffPeakClientConfig } from "./codingPlanSubscription.js";
 import {
   BIGMODEL_PROVIDER_ID,
   BUILTIN_MODEL_PROVIDER_IDS,
   REQUEST_VERIFICATION_REQUIRED,
   CODING_PLAN_SYSTEM_BUSY,
-  buildRuntimeZCodeApiUrl,
+  buildOfficialZCodeApiUrl,
   isZaiCodingPlanProviderId,
   resolveBigModelApiOrigin,
   resolveZaiBusinessBaseUrl,
   ZAI_PROVIDER_ID,
-  ZCODE_VERSION,
+  ZCODE_REPORT_VERSION,
   DEFAULT_ZCODE_MODEL_CONTEXT_BUDGET_STRATEGY,
   createDynamicWorkflowClientConfig,
   normalizeDynamicWorkflowMode,
@@ -114,44 +118,6 @@ interface RemoteEnvelope<T> {
   data?: T | null;
 }
 
-interface ManualClaimPlanPreviewPayload {
-  server_time?: number;
-  plans?: Array<{
-    plan_id?: string;
-    name?: string;
-    description?: string;
-    priority?: number;
-    entitlements?: Array<{
-      entitlement_id?: string;
-      show_name?: string;
-      meter?: string;
-      unit_type?: string;
-      capabilities?: string[];
-      grant_units?: number;
-      period?: string;
-      priority?: number;
-      effective_at?: number;
-    }>;
-  }>;
-}
-
-interface ManualClaimPlanClaimPayload {
-  server_time?: number;
-  message?: unknown;
-  plan?: {
-    user_plan_id?: string;
-    plan_id?: string;
-    status?: string;
-    starts_at?: number;
-    ends_at?: number;
-    entitlements?: Array<{
-      entitlement_id?: string;
-      show_name?: string;
-      effective_at?: number;
-    }>;
-  };
-}
-
 interface ZCodeClientConfigEnvelope {
   code?: number;
   msg?: string;
@@ -160,6 +126,8 @@ interface ZCodeClientConfigEnvelope {
     configs?:
       | (RequestVerificationClientConfig & {
           forceUpdate?: ForceUpdateConfig | null;
+          // 自建验证码配置：官方社区版该字段恒为 no-op，这里保留原值由 captchaConfig 解析。
+          captcha?: unknown;
           codingPlanBillingDiscount?: CodingPlanBillingDiscountConfig;
           codingPlanStaticProducts?: CodingPlanStaticProductsConfig;
           codingPlanStaticTeamProducts?: CodingPlanStaticTeamProductsConfig;
@@ -274,137 +242,31 @@ export class BigModelCodingPlanSubscriptionProvider {
     return unwrapClientConfigStartPlanPreview(payload);
   }
 
+  /**
+   * 官方限时可领取体验套餐：走独立 billing 端点，不读 client/configs 快照。
+   * 未登录（无 zcodejwttoken）时返回空列表，与官方一致——不发带空鉴权的请求。
+   */
   async getManualClaimPlanPreviews(): Promise<ManualClaimPlanPreviewSnapshot> {
-    const token = (await this.credentialService.load(ZCODE_JWT_TOKEN_KEY))?.trim();
-    const url = new URL(buildRuntimeZCodeApiUrl(process.env, "/api/v1/zcode-plan/billing/preview"));
-    url.searchParams.set("app_version", ZCODE_VERSION);
-    url.searchParams.set("platform", resolveClientPlatformKey());
-    const payload = await readCodingPlanApiJson<RemoteEnvelope<ManualClaimPlanPreviewPayload>>(
-      this.apiClient,
-      url,
-      {
-        method: "GET",
-        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-        timeoutMs: REQUEST_TIMEOUT_MS,
-      },
-    );
-    // 新 ZCode billing 接口沿用平台 envelope（code=0 成功），不能复用
-    // BigModel 支付接口的 code=200 解包器，否则合法 preview 会被误判失败。
-    if (payload.code !== undefined && payload.code !== 0) {
-      throw new Error(payload.msg?.trim() || "manual_claim_preview_failed");
-    }
-    if (!payload.data) {
-      throw new Error(payload.msg?.trim() || "manual_claim_preview_missing_data");
-    }
-    const data = payload.data;
-    const serverTime = readServerTimeMilliseconds(data.server_time);
-    const plans = (data.plans ?? []).flatMap((plan) => {
-      const planId = plan.plan_id?.trim() ?? "";
-      if (!planId) return [];
-      return [
-        {
-          planId,
-          name: plan.name?.trim() || planId,
-          description: plan.description?.trim() ?? "",
-          priority: Number.isFinite(plan.priority) ? (plan.priority ?? 0) : 0,
-          entitlements: (plan.entitlements ?? []).flatMap((entitlement) => {
-            const entitlementId = entitlement.entitlement_id?.trim() ?? "";
-            if (!entitlementId) return [];
-            return [
-              {
-                entitlementId,
-                showName: entitlement.show_name?.trim() ?? "",
-                meter: entitlement.meter?.trim() ?? "",
-                unitType: entitlement.unit_type?.trim() ?? "",
-                capabilities: entitlement.capabilities ?? [],
-                grantUnits: Number.isFinite(entitlement.grant_units)
-                  ? (entitlement.grant_units ?? 0)
-                  : 0,
-                period: entitlement.period?.trim() ?? "",
-                priority: Number.isFinite(entitlement.priority) ? (entitlement.priority ?? 0) : 0,
-                ...(Number.isFinite(entitlement.effective_at)
-                  ? { effectiveAt: entitlement.effective_at }
-                  : {}),
-              },
-            ];
-          }),
-        },
-      ];
+    return fetchManualClaimPlanPreviews({
+      apiClient: this.apiClient,
+      credentialService: this.credentialService,
     });
-    return { ...(serverTime === undefined ? {} : { serverTime }), plans };
   }
 
+  /** 领取体验套餐；失败返回结构化结果，不抛异常。 */
   async claimManualPlan(request: ManualClaimPlanClaimRequest): Promise<ManualClaimPlanClaimResult> {
-    const token = (await this.credentialService.load(ZCODE_JWT_TOKEN_KEY))?.trim();
-    if (!token) {
-      return { success: false, code: 401, message: "" };
-    }
-    const payload = await readCodingPlanApiJson<
-      Omit<RemoteEnvelope<ManualClaimPlanClaimPayload>, "code"> & { code?: number | string }
-    >(
-      this.apiClient,
-      new URL(buildRuntimeZCodeApiUrl(process.env, "/api/v1/zcode-plan/billing/claim")),
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-          ...requestVerificationClaimHeaders(request),
-          "X-ZCode-App-Version": ZCODE_VERSION,
-          "X-Platform": resolveClientPlatformKey(),
-        },
-        body: JSON.stringify({ plan_id: request.planId }),
-        timeoutMs: REQUEST_TIMEOUT_MS,
-      },
+    return claimManualPlan(
+      { apiClient: this.apiClient, credentialService: this.credentialService },
+      request,
     );
-    // 领取接口的错误码可能是数字字符串；缺失 code 仍不推断成功。
-    const rawCode = payload.code;
-    const code =
-      typeof rawCode === "number"
-        ? rawCode
-        : typeof rawCode === "string" && /^\d+$/.test(rawCode)
-          ? Number(rawCode)
-          : -1;
-    const serverTime = readServerTimeMilliseconds(payload.data?.server_time);
-    if (code !== 0 || !payload.data?.plan) {
-      const failureEndsAt = payload.data?.plan?.ends_at;
-      return {
-        success: false,
-        code,
-        // 服务端已完成翻译，顶层 msg 不是用户文案；空值由 UI 本地化兜底。
-        message: typeof payload.data?.message === "string" ? payload.data.message : "",
-        ...(serverTime === undefined ? {} : { serverTime }),
-        // 保留既有结果字段兼容其他调用方；营销提示不再据此推导文案。
-        ...(Number.isFinite(failureEndsAt) ? { failureEndsAt } : {}),
-      };
-    }
-    const plan = payload.data.plan;
-    return {
-      success: true,
-      code,
-      message: payload.msg?.trim() ?? "",
-      ...(serverTime === undefined ? {} : { serverTime }),
-      plan: {
-        userPlanId: plan.user_plan_id?.trim() ?? "",
-        planId: plan.plan_id?.trim() || request.planId,
-        status: plan.status?.trim() ?? "",
-        ...(Number.isFinite(plan.starts_at) ? { startsAt: plan.starts_at } : {}),
-        ...(Number.isFinite(plan.ends_at) ? { endsAt: plan.ends_at } : {}),
-        entitlements: (plan.entitlements ?? []).flatMap((entitlement) => {
-          const entitlementId = entitlement.entitlement_id?.trim() ?? "";
-          if (!entitlementId) return [];
-          return [
-            {
-              entitlementId,
-              showName: entitlement.show_name?.trim() ?? "",
-              ...(Number.isFinite(entitlement.effective_at)
-                ? { effectiveAt: entitlement.effective_at }
-                : {}),
-            },
-          ];
-        }),
-      },
-    };
+  }
+
+  async getCaptchaConfig(): Promise<CaptchaConfig | null> {
+    // 1h 产品配置缓存可延迟验证码启用；模型请求逐次检查必须获取当前服务端配置。
+    this.clientConfigSnapshot = null;
+    this.clientConfigSnapshotExpiresAt = 0;
+    const payload = await this.getClientConfigs();
+    return parseCaptchaConfig(payload.data?.configs?.captcha);
   }
 
   /**
@@ -809,7 +671,7 @@ export class BigModelCodingPlanSubscriptionProvider {
     // client/configs 和其他 ZCode 平台接口必须共享运行时 endpoint；
     // E2E/测试环境会通过 ZCODE_BASE_URL 指向本地 mock，硬编码线上域名会让套餐状态不可控。
     const url = resolveCodingPlanClientConfigUrl(process.env);
-    url.searchParams.set("app_version", ZCODE_VERSION);
+    url.searchParams.set("app_version", ZCODE_REPORT_VERSION);
     url.searchParams.set("platform", resolveClientPlatformKey());
     // StartPlanCard 和套餐列表都来自同一个 client/configs。
     // 同屏分别读取 preview/products 时必须合并请求，避免未登录设置页重复打远端配置。
@@ -1015,8 +877,10 @@ export class BigModelCodingPlanSubscriptionProvider {
   }
 }
 
-export function resolveCodingPlanClientConfigUrl(env: NodeJS.ProcessEnv): URL {
-  return new URL(buildRuntimeZCodeApiUrl(env, ZCODE_CLIENT_CONFIG_API_PREFIX));
+export function resolveCodingPlanClientConfigUrl(_env: NodeJS.ProcessEnv): URL {
+  // 自托管：官方控制面配置（验证码 / Start Plan / 灰度）固定走官方 origin，
+  // relay 与更新源由 Desktop 独立配置，不从业务 origin 推导。
+  return new URL(buildOfficialZCodeApiUrl(ZCODE_CLIENT_CONFIG_API_PREFIX));
 }
 
 function resolveFallbackEnterpriseTeamPlanProduct(

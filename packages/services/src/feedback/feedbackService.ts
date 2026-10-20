@@ -6,7 +6,7 @@ import {
   buildRuntimeZCodeApiUrl,
   ZCODE_BUILD_TIME,
   ZCODE_COMMIT,
-  ZCODE_VERSION,
+  ZCODE_REPORT_VERSION,
 } from "@zcode/shared";
 import { Emitter } from "@zcode/rpc";
 import { arch, platform, release, type as osType } from "node:os";
@@ -46,7 +46,7 @@ function resolveApiBaseUrl(explicit?: string): string {
 
 function buildDeviceSnapshot(): FeedbackDeviceInfo {
   return {
-    appVersion: ZCODE_VERSION,
+    appVersion: ZCODE_REPORT_VERSION,
     buildCommitId: ZCODE_COMMIT,
     buildTime: ZCODE_BUILD_TIME,
     nodeVersion: process.version,

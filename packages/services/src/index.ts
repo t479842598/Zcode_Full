@@ -1,3 +1,9 @@
+export {
+  isEnabledCaptchaConfig,
+  isModelRequestVerificationRequired,
+  parseCaptchaConfig,
+  type CaptchaConfig,
+} from "./coding-plan-subscription/captchaConfig.js";
 // Descriptors & collection (browser-safe)
 export { type ServiceDescriptor, createServiceDescriptor } from "./descriptors.js";
 export { ServiceCollection, type ServiceExposurePolicy } from "./collection.js";
@@ -9,6 +15,7 @@ export {
   type ProviderSettingsProviderView,
   type ProviderSettingsView,
 } from "./model-provider/providerFacadeServices.js";
+export type { ProviderModelCatalogEntry } from "./model-provider/providerModelCatalog.js";
 export {
   createAccountRequestAuthService,
   type IAccountRequestAuthService,
@@ -230,6 +237,18 @@ export type { SessionRealtimePort } from "./session/sessionRealtimePort.js";
 
 // FileWatcher service — IFileWatcherService is both a type (interface) and value (descriptor)
 export { IFileWatcherService } from "./fileWatcher/fileWatcher.js";
+export { IWebRemoteControlService } from "./webRemoteControl/webRemoteControl.js";
+export { IBackupService } from "./selfBackup/selfBackup.js";
+export type {
+  SelfBackupSettings,
+  SelfBackupStatus,
+  SelfBackupResult,
+} from "./selfBackup/selfBackup.js";
+export type {
+  WebRemoteControlState,
+  WebRemoteControlStatus,
+} from "./webRemoteControl/webRemoteControl.js";
+export type { WebRemoteControlService } from "./webRemoteControl/webRemoteControlService.js";
 
 // OAuth service — IOAuthService is both a type (interface) and value (descriptor)
 export { IOAuthService } from "./oauth/oauth.js";
@@ -246,6 +265,17 @@ export {
   ICodingPlanSubscriptionService,
   type OffPeakClientConfig,
 } from "./coding-plan-subscription/codingPlanSubscription.js";
+// 官方限时可领取体验套餐：UI 只消费类型与失败归因纯函数；网络实现在 node 侧。
+export { resolveManualClaimPlanFailureReason } from "./coding-plan-subscription/manualClaimPlanFailure.js";
+export type {
+  ManualClaimPlanPreview,
+  ManualClaimPlanPreviewResult,
+  ManualClaimPlanEntitlement,
+  ManualClaimPlanClaimInput,
+  ManualClaimPlanClaimResult,
+  ManualClaimPlanClaimedPlan,
+  ManualClaimPlanFailureReason,
+} from "./coding-plan-subscription/manualClaimPlan.js";
 export {
   IClientScenesService,
   type ClientSceneConfig,

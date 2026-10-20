@@ -4,20 +4,51 @@
   <img src="public/logo/icons/1024x1024.png" alt="ZCode" width="128" height="128" />
 </div>
 <p align="center">
-  <a href="https://applink.feishu.cn/client/chat/chatter/add_by_link?link_token=47ag983c-8fcb-4d6d-814b-5395193a712c&amp;qr_code=true">飞书社群</a> ·
-  <a href="https://discord.gg/z9aBcQXZQ3">Discord</a>
-</p>
-<p align="center">
   简体中文 | <a href="README.en.md">English</a>
 </p>
 
+> **本仓库是 ZCode 的自托管分支**（基于上游 [zai-org/ZCode](https://github.com/zai-org/ZCode) v3.16.x）。目标是**不依赖官方云端**也能完整使用：中继、备份、更新全部可自建，登录与配置由你自己掌控，同时保留官方账号登录与免费额度。
+
+## 本分支相对官方开源版的增强
+
+### 新增能力
+
+| 能力 | 说明 | 主要实现 |
+| --- | --- | --- |
+| **自建中继与移动端远程控制** | 官方闭源的「移动端远程控制」在此自建实现。桌面端连接你自己的中继服务器，手机浏览器扫码配对后即可查看工作区列表、任务与对话，并远程继续 | `packages/desktop/src/host/relay*.ts`、`packages/services/src/webRemoteControl/`、`packages/ui/src/WebRemoteControlDialog.tsx` |
+| **自助备份** | 在设置页填入自己的 OSS 密钥 / 服务器地址与加密口令即可备份。支持手动与定时触发，数据端到端加密；密钥**只写不读**，存放于系统凭据库 | `packages/services/src/selfBackup/`、`packages/ui/src/settings/BackupSettingsSection.tsx` |
+| **自建自动更新** | 更新清单与安装包由你自己的服务器提供，客户端点击更新即可升级；不改动官方更新机制，仅替换接口来源。附带发布脚本 | `scripts/publish-release.mjs`、`.github/workflows/build-installers.yml` |
+| **自定义供应商「获取模型」** | 配置 Base URL 与 Key 后，可一键拉取该供应商的模型列表并选择 | `packages/services/src/model-provider/providerModelCatalog.ts`、`ProviderModelCatalogDialog.tsx` |
+
+### 行为调整
+
+| 调整 | 说明 |
+| --- | --- |
+| 去除强制登录 | 不再因未登录强制弹出登录页；仅在没有任何可用模型时才引导配置（BYOK / 自建端点） |
+| 模型出口可自托管 | 设 `ZCODE_DISABLE_OFFICIAL_CODING_PLAN_GATEWAY=1` 可绕过官方网关改写，请求直连 provider 声明的端点 |
+| 关闭遥测 | `ZCODE_TELEMETRY_ENABLED = false`，不再向官方上报 |
+| 去商业化 | 移除头像菜单的升级入口与付费订阅引导 |
+| 保留官方免费额度 | StartPlan 免费额度领取入口保留，且仅在可领取时显示 |
+| 去除营销内容 | 移除官方社群、反馈表单等外链 |
+| 思考块不自动收起 | 阅读长回答时不再被折叠打断 |
+| 移动端适配 | 手机端侧栏默认收起、点击展开；移除「索引库」入口 |
+
+---
+
 ZCode 是 AI 编程工作台，提供桌面应用、浏览器界面和终端 Agent。本仓库包含客户端、后端服务、共享 UI，以及 Agent CLI 与运行时源码。
+
+| 入口                 | 用途                                                           | 开发命令                       |
+| -------------------- | -------------------------------------------------------------- | ------------------------------ |
+| Desktop              | Electron 桌面应用                                              | `pnpm dev:desktop`             |
+| Web / ZCode 命令行版 | 终端与浏览器工作台；将 TUI、Web、后端和 Agent 组装为独立运行包 | `pnpm dev:web`                 |
+| Agent CLI            | 在终端中使用 `zcode`，也为 Desktop 和 Web 提供 Agent 运行时    | `pnpm --filter @zcode/cli dev` |
 
 ## 更新
 
 - **2026-10-19**：更新至 ZCode v3.16.2 版本。
 - **2026-10-16**：更新至 ZCode v3.16.1 版本。
 - 2026-10-10：更新至 ZCode v3.15.1 版本。
+- 2026-09-29：同步官方 v3.14.3 增量（三方合并，280 个文件已对齐），发布 v3.14.4。
 - 2026-9-23：更新至 ZCode v3.14.3 版本。
 
 ## 初始化
@@ -226,7 +257,3 @@ node dist/zcode/debug/zcode/bin/zcode.mjs --web \
 | `packages/provider`、`packages/provider-node`        | Provider 公共能力与 Node 实现              |
 | `apps/zcode-cli`                                     | Agent CLI、TUI、运行时与工具               |
 | `scripts`、`config`、`third-party`                   | 构建维护脚本、内置配置与第三方声明材料     |
-
-## 项目声明
-
-功能与优惠范围、维护规则、执行与数据风险，以及许可和第三方版权说明，详见 [NOTICE.md](NOTICE.md)。

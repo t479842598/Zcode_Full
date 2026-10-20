@@ -24,7 +24,8 @@ export interface AccountRequestAuthInput {
   accountAccess: ZCodeProviderAccountAccess | ZCodeAccountAccess;
   expectedAccountScope?: string;
   rejectedProjectTokenFingerprint?: string;
-  reason: RequestVerificationReason | "off-peak" | "usage";
+  // 自托管：模型请求允许带验证码证明重试；官方正版只有 model-request。
+  reason: RequestVerificationReason | "captcha-retry" | "off-peak" | "usage";
 }
 
 export interface AccountAccessIdentityInput {

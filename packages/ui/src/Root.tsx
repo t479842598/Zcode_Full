@@ -106,6 +106,7 @@ import { setUiPerfArmsReporter } from "@/lib/uiPerfArmsTelemetry.js";
 import { setSessionOpenArmsReporter } from "@/lib/sessionOpenArmsTelemetry.js";
 import { setSendFunnelArmsReporter } from "@/lib/sendFunnelArmsTelemetry.js";
 import { RootStartupLoading } from "@/root/RootStartupLoading.js";
+import { useStartPlanVerification } from "@/root/useStartPlanVerification.js";
 import { resolveProviderAvailabilityState } from "@/lib/modelProviderAvailability.js";
 import { useProviderAvailabilityLoginEntryGuard } from "@/root/useProviderAvailabilityLoginEntryGuard.js";
 import { ensureProviderFamilyDomainMigration } from "@/lib/providerFamilyDomainMigration.js";
@@ -253,6 +254,8 @@ function RootInner({
   useDynamicWorkflowAvailabilityLoader(services.codingPlanSubscriptionService);
 
   const { intl, locale } = useZCodeIntl();
+  // 自托管：StartPlan 模型请求免验证码 / 桌面 Host 侧的请求级挑战回执。
+  useStartPlanVerification(services, isDesktop, locale);
   const handleRemoteConnectionTargetChange = useSourceServerUpdateNotifications({
     enabled: isDesktop === true,
     management: services.sourceServerManagementService,

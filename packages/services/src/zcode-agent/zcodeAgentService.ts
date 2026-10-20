@@ -23,6 +23,12 @@ import {
   type ChannelReplyHostRequest,
   type ChannelReplyResult,
 } from "@zcode/shared";
+import {
+  isStartPlanRequest,
+  isCurrentVerificationRequest,
+  startPlanVerificationHeaders,
+} from "./startPlanVerification.js";
+import { isModelRequestVerificationRequired } from "#src/coding-plan-subscription/captchaConfig.js";
 import { requestPluginReferenceCatalog } from "#src/zcode-agent/pluginReferenceCatalogRequest.js";
 import {
   localTtftFactsSchema,
@@ -996,6 +1002,10 @@ interface CreateZCodeAgentServiceOptions extends Omit<
   mcpStatusIdleTimeoutMs?: number;
   accountProviderConfigSource?: ProviderSource<AccountProviderConfigSnapshot>;
   accountRequestAuthService?: IAccountRequestAuthService;
+  resolveStartPlanCaptchaConfig?: () => Promise<
+    import("../coding-plan-subscription/captchaConfig.js").CaptchaConfig | null
+  >;
+  allowStartPlanVerificationInteraction?: boolean;
   /** Desktop Host 请求 Main 登记 Agent 已授权的精确本地视频路径。 */
   authorizeLocalMediaPreviewPath?: (path: string) => Promise<string>;
   modelSelectionReadinessSource?: ModelSelectionReadinessSource;
@@ -1283,6 +1293,13 @@ export function createZCodeAgentService(
     pending: PendingProviderRuntimeHeadersRequest,
   ): void {
     pendingProviderRuntimeHeaders.delete(key);
+    if (isStartPlanRequest(pending.request)) {
+      startPlanVerificationCancelledEmitter.fire({
+        requestId: pending.request.requestId,
+        sessionId: pending.request.sessionId,
+        workspaceKey: pending.request.workspace.workspaceKey,
+      });
+    }
     const { requestId, sessionId, workspace } = pending.request;
     // 先删除再投递，确保晚订阅不会重新启动已取消的请求校验。
     providerRuntimeHeadersCancelledEmitters
@@ -1294,6 +1311,36 @@ export function createZCodeAgentService(
       workspaceKey: resolveWorkspaceKey(workspace),
     });
   }
+  let startPlanVerificationListenerReady = false;
+  const startPlanVerificationEmitter = new Emitter<ZCodeProviderRuntimeHeadersRequestParams>({
+    onWillAddFirstListener: () => {
+      startPlanVerificationListenerReady = true;
+    },
+    onDidRemoveLastListener: () => {
+      startPlanVerificationListenerReady = false;
+      // 桌面交互方消失时立刻终结当前等待，避免无UI的任务卡到CLI总超时。
+      for (const [key, pending] of pendingProviderRuntimeHeaders) {
+        if (!isStartPlanRequest(pending.request)) continue;
+        // 即使回执正在异步读取配置/JWT，桌面消失也应撤销本请求。
+        cancelProviderRuntimeHeaders(key, pending);
+        void pending.client
+          .respond(pending.protocolRequestId, {
+            headersApplied: false,
+            errorMessage: "Start Plan verification desktop interaction closed",
+          })
+          .catch((error: unknown) => {
+            logger.debug(undefined, "桌面验证取消回执未送达", {
+              reason: error instanceof Error ? error.message : String(error),
+            });
+          });
+      }
+    },
+  });
+  const startPlanVerificationCancelledEmitter = new Emitter<{
+    requestId: string;
+    sessionId: string;
+    workspaceKey: string;
+  }>();
   const sessionRuntimePreferencesRequestEmitter =
     new Emitter<ZCodeAgentSessionRuntimePreferencesRequest>();
   const processResourceSampleEmitter = new Emitter<AgentLaneResourceSample>();
@@ -2636,6 +2683,14 @@ export function createZCodeAgentService(
             protocolRequestId: request.id,
             request: parsed.data,
           };
+          // 重复 requestId 不得覆盖已经在等待的 CLI protocol id；只拒绝重复者。
+          if (pendingProviderRuntimeHeaders.has(pendingKey)) {
+            void client.respond(request.id, {
+              headersApplied: false,
+              errorMessage: "Provider runtime headers request is already pending",
+            });
+            return;
+          }
           pendingProviderRuntimeHeaders.set(pendingKey, pending);
           logger.info(request.trace?.traceId, "收到 ZCode provider runtime headers 请求", {
             modelId: parsed.data.modelSelection.modelId,
@@ -2647,6 +2702,23 @@ export function createZCodeAgentService(
             workspacePath: workspace.workspacePath,
           });
           const accountAccess = parsed.data.accountAccess;
+          if (accountRequestAuthService && accountAccess && isStartPlanRequest(parsed.data)) {
+            // Start Plan 的验证结果仅来自当前桌面窗口；无交互端时明确拒绝而非退回JWT直发。
+            if (
+              !options?.allowStartPlanVerificationInteraction ||
+              !options.resolveStartPlanCaptchaConfig ||
+              !startPlanVerificationListenerReady
+            ) {
+              pendingProviderRuntimeHeaders.delete(pendingKey);
+              void pending.client.respond(pending.protocolRequestId, {
+                headersApplied: false,
+                errorMessage: "Start Plan verification requires desktop interaction",
+              });
+              return;
+            }
+            startPlanVerificationEmitter.fire(parsed.data);
+            return;
+          }
           if (
             accountRequestAuthService &&
             accountAccess &&
@@ -3595,6 +3667,8 @@ export function createZCodeAgentService(
     for (const emitter of providerRuntimeHeadersCancelledEmitters.values()) emitter.dispose();
     providerRuntimeHeadersCancelledEmitters.clear();
     sessionRuntimePreferencesRequestEmitter.dispose();
+    startPlanVerificationEmitter.dispose();
+    startPlanVerificationCancelledEmitter.dispose();
     processResourceSampleEmitter.dispose();
     mcpTelemetryEmitter.dispose();
     toolExecResourceEmitter.dispose();
@@ -5643,6 +5717,74 @@ export function createZCodeAgentService(
         providerRuntimeHeadersCancelledEmitters.set(key, emitter);
       }
       return emitter.event;
+    },
+
+    onDynamicStartPlanVerificationCancelled() {
+      return startPlanVerificationCancelledEmitter.event;
+    },
+
+    onDynamicStartPlanVerificationRequest() {
+      return (listener) => {
+        const disposable = startPlanVerificationEmitter.event(listener);
+        for (const pending of pendingProviderRuntimeHeaders.values()) {
+          if (isStartPlanRequest(pending.request) && !pending.responding) listener(pending.request);
+        }
+        return disposable;
+      };
+    },
+
+    async respondStartPlanVerification(params) {
+      const key = providerRuntimeHeadersRequestKey({
+        workspacePath: params.workspace.workspacePath,
+        workspaceIdentity: params.workspace.workspaceIdentity,
+        remoteSessionId: params.workspace.remoteSessionId,
+        sessionId: params.sessionId,
+        requestId: params.requestId,
+      });
+      const pending = pendingProviderRuntimeHeaders.get(key);
+      if (
+        !pending ||
+        pending.responding ||
+        !isStartPlanRequest(pending.request) ||
+        !isCurrentVerificationRequest(pending.request, params)
+      ) {
+        throw new Error("Start Plan verification request is no longer active");
+      }
+      pending.responding = true;
+      try {
+        const config = await options?.resolveStartPlanCaptchaConfig?.();
+        if (!config) throw new Error("Start Plan verification is unavailable");
+        // 是否需要验证必须与 UI 判定同源：官方 3.14.4 起可能以 skip_model_request 关闭
+        // 模型请求侧校验（enabled 仍为 true）。只比对 enabled 会把 skip 场景误判成
+        // "state changed" 并拒绝回执，正是「一直过不了验证码」的一环。
+        const verificationRequired = isModelRequestVerificationRequired(config);
+        if (params.verificationNotRequired !== !verificationRequired) {
+          throw new Error("Start Plan verification state changed");
+        }
+        if (verificationRequired && !params.captchaVerifyParam) {
+          throw new Error("Start Plan verification cancelled");
+        }
+        const headers = startPlanVerificationHeaders(config, {
+          captchaVerifyParam: params.captchaVerifyParam ?? "",
+          captchaRegion: params.captchaRegion,
+        });
+        const auth = await resolveAccountRequestAuth(pending.request);
+        if (!auth?.apiKey) throw new Error("Start Plan account credential unavailable");
+        if (pendingProviderRuntimeHeaders.get(key) !== pending) return;
+        await pending.client.respond(pending.protocolRequestId, {
+          headersApplied: true,
+          requestAuth: { apiKey: auth.apiKey, headers },
+        });
+      } catch (error) {
+        if (pendingProviderRuntimeHeaders.get(key) !== pending) return;
+        await pending.client.respond(pending.protocolRequestId, {
+          headersApplied: false,
+          errorMessage: error instanceof Error ? error.message : "Start Plan verification failed",
+        });
+      } finally {
+        if (pendingProviderRuntimeHeaders.get(key) === pending)
+          pendingProviderRuntimeHeaders.delete(key);
+      }
     },
 
     onDynamicSessionRuntimePreferencesRequest() {

@@ -1,15 +1,13 @@
 import type { ApiClient } from "@zcode/shared";
 import {
-  buildRuntimeZCodeEndpointUrls,
+  buildOfficialZCodeApiUrl,
   normalizeOfficialGlmModelId,
-  ZCODE_VERSION,
+  ZCODE_REPORT_VERSION,
 } from "@zcode/shared";
 import { readApiJson } from "../providers/api/apiJson.js";
 
 const REQUEST_TIMEOUT_MS = 15_000;
-const ZAI_START_PLAN_BALANCE_URL = buildRuntimeZCodeEndpointUrls(
-  process.env,
-).zcodePlanBillingBalanceUrl;
+const ZAI_START_PLAN_BALANCE_URL = buildOfficialZCodeApiUrl("/api/v1/zcode-plan/billing/balance");
 
 export interface ZaiStartPlanPlan {
   // user_plan_id 标识用户套餐实例；额度提醒用它关联同一实例的 entitlement 周期类型。
@@ -64,7 +62,7 @@ export function buildZaiStartPlanBalanceUrl(): string {
   const url = new URL(ZAI_START_PLAN_BALANCE_URL);
   // Start Plan balance 接口按真实 app_version 判定能力；
   // 开发环境也不能固定 3.0.0，否则本地验证会绕过当前 App 版本的后端策略。
-  url.searchParams.set("app_version", ZCODE_VERSION);
+  url.searchParams.set("app_version", ZCODE_REPORT_VERSION);
   return url.toString();
 }
 

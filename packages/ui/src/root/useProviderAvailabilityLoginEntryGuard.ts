@@ -54,7 +54,10 @@ export function useProviderAvailabilityLoginEntryGuard({
         : modelSelectionView;
       const availability = resolveProviderAvailabilityState({ modelSelectionView: refreshedView });
       const { hasUsableProvider, providerCount } = availability;
-      const shouldOpenLoginEntry = !providerFamilyDomain || (!user && !hasUsableProvider);
+      // 自托管：不再因未登录强制弹登录页。原先 `!providerFamilyDomain ||` 分支使
+      // providerFamilyDomain 未设置时恒为 true，导致每次启动都弹登录。
+      // 现在只在「没有任何可用模型」时引导用户配置（BYOK / 自建端点）。
+      const shouldOpenLoginEntry = !hasUsableProvider;
 
       // 未登录且没有可用模型配置时必须引导用户连接账号或填写 API Key。
       // 启动检查、API Key 设置回流等入口统一走这里，避免各处复制判断后语义分叉。

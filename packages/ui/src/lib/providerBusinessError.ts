@@ -23,6 +23,7 @@ export {
  * | 模型不可用     | 3006 | 400  | 切换到 Built-in Provider 中的其他模型 |
  * | 参数错误       | 3001 | 400  | 检查请求体 |
  * | 安全校验拒绝   | 3007 | 403  | 客户端无法完成安全校验，提示联系支持 |
+ * | 服务端风控拦截 | 3012 | 405  | 账号级风控，客户端不可绕过，提示稍后重试或联系支持 |
  * | 模型并发上限   | 3010 | 429  | Start Plan 下走升级横幅 |
  * | 请求过频       | 3002/429 | 429 | 限流提示，稍后重试 |
  * | 闲时票据不可用 | 3102 | 400  | 单段运行时间到顶，提示新建闲时任务续跑 |
@@ -39,6 +40,7 @@ export const PROVIDER_BUSINESS_ERROR_CODES = [
   "3008",
   "3009",
   "3010",
+  "3012",
   "3002",
   "3102",
   "2007",
@@ -65,6 +67,7 @@ export const PROVIDER_BUSINESS_ERROR_MESSAGE_IDS: Record<ProviderBusinessErrorCo
   "3008": "zcode.error.providerBusiness.3008",
   "3009": "zcode.error.providerBusiness.3009",
   "3010": "zcode.error.providerBusiness.3010",
+  "3012": "zcode.error.providerBusiness.3012",
   "3102": "zcode.error.providerBusiness.3102",
   "2007": "zcode.error.providerBusiness.2007",
   "429": "zcode.error.providerBusiness.429",
@@ -95,6 +98,9 @@ const PROVIDER_BUSINESS_ERROR_UI_ACTIONS: Record<
   "3008": "upgrade",
   "3009": "upgrade",
   "3010": "upgrade",
+  // 3012 服务端风控拦截：账号级判定，客户端没有任何可执行的绕过动作，
+  // 只能提示稍后重试或联系支持（详见 docs/2026-10-10-free-quota-diagnosis.md）。
+  "3012": null,
   "3002": "retry-later",
   // 3102 闲时票据不可用：只能新建闲时任务续跑，横幅里的重试/切模型都救不回来。
   "3102": null,

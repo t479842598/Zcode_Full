@@ -1,5 +1,6 @@
 import {
   DEFAULT_ZCODE_ENDPOINT_ORIGIN,
+  ZCODE_REPORT_VERSION,
   ZCODE_VERSION,
   buildZCodeEndpointUrls,
   getForceUpdateMinimalVersionFromConfig,
@@ -48,7 +49,7 @@ export function resolveForceUpdateClientConfigUrl(
   const url = new URL(
     `${buildZCodeEndpointUrls(endpointOrigin).origin}${ZCODE_CLIENT_CONFIG_API_PATH}`,
   );
-  url.searchParams.set("app_version", ZCODE_VERSION);
+  url.searchParams.set("app_version", ZCODE_REPORT_VERSION);
   url.searchParams.set("platform", `${process.platform}-${process.arch}`);
   return url.toString();
 }

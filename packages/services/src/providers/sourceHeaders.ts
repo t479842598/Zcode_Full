@@ -6,7 +6,7 @@ import {
   normalizeZCodeSourceHeaderValue,
   ZCODE_ENV,
   ZCODE_SOURCE_HEADERS,
-  ZCODE_VERSION,
+  ZCODE_REPORT_VERSION,
 } from "@zcode/shared";
 import { getAppConfigDir } from "../paths.js";
 
@@ -67,7 +67,7 @@ export function buildZCodeSourceHeaders(
 ): Record<string, string> {
   const platform = options.platform ?? process.platform;
   const arch = options.arch ?? process.arch;
-  const appVersion = normalizePrintableHeaderValue(options.appVersion ?? ZCODE_VERSION);
+  const appVersion = normalizePrintableHeaderValue(options.appVersion ?? ZCODE_REPORT_VERSION);
   const releaseChannel = normalizePrintableHeaderValue(options.releaseChannel ?? ZCODE_ENV);
   const clientLanguage =
     normalizePrintableHeaderValue(options.clientLanguage) ?? resolveClientLanguage();

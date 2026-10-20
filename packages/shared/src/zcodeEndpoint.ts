@@ -1,6 +1,22 @@
 import type { ZCodeEnv } from "./env.js";
 
 export const DEFAULT_ZCODE_ENDPOINT_ORIGIN = "https://zcode.z.ai";
+export const DEFAULT_ZCODE_REWARDS_ORIGIN = DEFAULT_ZCODE_ENDPOINT_ORIGIN;
+
+/**
+ * 构建官方权益页地址：始终钉在官方地址，不继承自建中继/更新站的 endpoint 覆盖，
+ * 否则自托管实例会把官方权益页指向自己的域名。
+ */
+export function buildZCodeRewardsUrl(options?: {
+  locale?: "zh-CN" | "en-US" | null;
+  theme?: "zai-light" | "zai-dark" | null;
+}): string {
+  const pathname = options?.locale === "zh-CN" ? "/cn/rewards" : "/en/rewards";
+  const url = new URL(pathname, DEFAULT_ZCODE_REWARDS_ORIGIN);
+  url.searchParams.set("embedded", "app");
+  if (options?.theme) url.searchParams.set("theme", options.theme);
+  return url.toString();
+}
 export const TEST_ZCODE_ENDPOINT_ORIGIN = "https://zcode.z.ai";
 export const CODING_PLAN_LOCAL_WEBVIEW_ORIGIN = "http://localhost:3000";
 export const DEFAULT_BIGMODEL_API_ORIGIN = "https://bigmodel.cn";
@@ -225,6 +241,12 @@ export function buildRuntimeZCodeEndpointUrls(
   env: RuntimeZCodeEndpointEnv = {},
 ): ZCodeEndpointUrls {
   return buildZCodeEndpointUrls(resolveRuntimeZCodeEndpointOrigin(env));
+}
+
+/** 官方账号、权益和模型控制面不能继承自建中继/更新站的地址。 */
+export function buildOfficialZCodeApiUrl(path: string): string {
+  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+  return `${DEFAULT_ZCODE_ENDPOINT_ORIGIN}${normalizedPath}`;
 }
 
 export function buildRuntimeZCodeApiUrl(env: RuntimeZCodeEndpointEnv = {}, path: string): string {

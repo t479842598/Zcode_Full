@@ -856,6 +856,21 @@ export interface IZCodeAgentService {
   onDynamicWorkspaceProviderRuntimeHeadersCancelled(
     params: ZCodeAgentWorkspaceTarget,
   ): Event<ZCodeProviderRuntimeHeadersCancelled>;
+  /** 桌面会话的当前请求安全验证；Remote/无UI客户端不提供交互式应答。 */
+  onDynamicStartPlanVerificationRequest(): Event<ZCodeProviderRuntimeHeadersRequestParams>;
+  onDynamicStartPlanVerificationCancelled(): Event<{
+    requestId: string;
+    sessionId: string;
+    workspaceKey: string;
+  }>;
+  respondStartPlanVerification(params: {
+    requestId: string;
+    sessionId: string;
+    workspace: ZCodeProviderRuntimeHeadersRequestParams["workspace"];
+    captchaVerifyParam?: string;
+    verificationNotRequired?: boolean;
+    captchaRegion?: string;
+  }): Promise<void>;
   onDynamicSessionRuntimePreferencesRequest(): Event<ZCodeAgentSessionRuntimePreferencesRequest>;
   /**
    * CLI 进程级资源样本，带 services 打的 lane 标签（CLI 自己不知道 lane）。

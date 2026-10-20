@@ -8,7 +8,7 @@ import {
 import {
   isBuiltinModelProviderId,
   resolveRuntimeZCodeEndpointOrigin,
-  ZCODE_VERSION,
+  ZCODE_REPORT_VERSION,
 } from "@zcode/shared";
 import { dirname, join } from "node:path";
 import {
@@ -75,7 +75,7 @@ export async function startProcessProviderRegistryRuntime(
               downloadZCodeBuiltinRelease({
                 endpointOrigin,
                 signal,
-                appVersion: ZCODE_VERSION,
+                appVersion: ZCODE_REPORT_VERSION,
                 platform: resolveZCodeBuiltinClientPlatform(),
                 request: options.standalone?.request ?? globalThis.fetch,
               }),

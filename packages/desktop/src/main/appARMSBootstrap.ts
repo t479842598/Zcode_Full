@@ -3,7 +3,12 @@ import { randomUUID } from "node:crypto";
 import { basename } from "node:path";
 import armsRum from "@arms/rum-electron";
 import { ZCODE_AGENT_LIFECYCLE_LOG_MARKER } from "@zcode/shared/process-diagnostic";
-import { ZCODE_ARMS_RUM_ENDPOINT, ZCODE_VERSION, mapZCodeEnvToArmsRumEnv } from "@zcode/shared";
+import {
+  ZCODE_ARMS_RUM_ENDPOINT,
+  ZCODE_REPORT_VERSION,
+  ZCODE_VERSION,
+  mapZCodeEnvToArmsRumEnv,
+} from "@zcode/shared";
 import { ARMS_BROWSER_COLLECTORS, parseArmsViewName } from "../shared/armsRumShared.js";
 import { redactArmsEventBatch } from "./armsEventRedaction.js";
 import { ensureDesktopDeviceMidSync } from "./desktopDeviceMid.js";
@@ -163,7 +168,8 @@ armsRum.client.useReporter = (reporter) => {
 export const armsInitPromise = armsRum
   .init({
     enable: ZCODE_ARMS_RUM_ENDPOINT !== "",
-    version: ZCODE_VERSION,
+    // 上报版本必须是纯 semver：自托管版本号带 -selfhost.N 后缀，官方只认它自己发行过的号。
+    version: ZCODE_REPORT_VERSION,
     endpoint: ZCODE_ARMS_RUM_ENDPOINT,
     env: armsRumEnv,
     // Browser SDK 由 SDK 在 dom-ready 经 executeJavaScript 注入；勿再在 preload/renderer 手动 init，避免重复采集
@@ -171,7 +177,7 @@ export const armsInitPromise = armsRum
     browserCollectors: { ...ARMS_BROWSER_COLLECTORS },
     app: {
       name: runtimeApplicationName,
-      version: ZCODE_VERSION,
+      version: ZCODE_REPORT_VERSION,
       env: armsRumEnv,
       type: "electron",
       framework: "react",

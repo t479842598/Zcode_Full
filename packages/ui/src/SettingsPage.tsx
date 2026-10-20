@@ -72,7 +72,9 @@ import { buildUsageEntitlementCacheKey } from "@/lib/usageEntitlementCache.js";
 import { ArchiveManagement, useOptionalProjectDirectory } from "@/project-sidebar/index.js";
 import { resolveRecentRemoteProjectPreference } from "@/project-sidebar/remote-project-connection.js";
 import { ModelProviderSection } from "@/settings/ModelProviderSection.js";
-import { useCodingPlanUpgradeDialog } from "@/settings/CodingPlanUpgradeDialogProvider.js";
+import { OfficialReleaseSection } from "@/settings/OfficialReleaseSection.js";
+import { OfficialRewardsSection } from "@/settings/OfficialRewardsSection.js";
+import { BackupSettingsSection } from "@/settings/BackupSettingsSection.js";
 import { useEnterpriseCodingPlanProducts } from "@/settings/model-provider-section/useEnterpriseCodingPlanProducts.js";
 import { UsageStatsSection, type UsageStatsSectionTab } from "@/settings/UsageStatsSection.js";
 import {
@@ -628,7 +630,6 @@ export function SettingsPage({
     usageBigmodelEnterpriseProducts.loading ||
     usageZaiEnterpriseProducts.loading;
   const [initialModelProviderTarget] = useState(() => consumePendingSettingsModelProviderTarget());
-  const { openCodingPlanUpgrade } = useCodingPlanUpgradeDialog();
   const [pendingModelProviderTarget, setPendingModelProviderTarget] = useState<
     SettingsModelProviderTarget | undefined
   >(() => initialModelProviderTarget);
@@ -682,18 +683,6 @@ export function SettingsPage({
       setActiveSettingsSection("general");
     }
   }, [activeSection, isDesktop, setActiveSettingsSection]);
-  const handleOpenCodingPlanUpgradeSettings = useCallback(
-    (
-      providerId: string,
-      funnelContext?: import("@/lib/codingPlanFunnelTelemetry.js").CodingPlanFunnelContext,
-    ) => {
-      openCodingPlanUpgrade({
-        providerId,
-        funnelContext,
-      });
-    },
-    [openCodingPlanUpgrade],
-  );
   const handleOpenModelProviderSettings = useCallback(() => {
     setActiveSettingsSection("modelProvider");
   }, [setActiveSettingsSection]);
@@ -1690,7 +1679,6 @@ export function SettingsPage({
                   onThemeChange={handleFooterThemeChange}
                   onSettingsButtonClick={onBack}
                   onUsageClick={handleOpenUsageSettings}
-                  onUpgradeClick={handleOpenCodingPlanUpgradeSettings}
                   onLogin={onLogin}
                   onLogout={onLogout}
                   settingsButtonMode="back"
@@ -1808,6 +1796,17 @@ export function SettingsPage({
                           </div>
                           {activeSection === "general" ? (
                             <GeneralSectionHeader localePreference={localePreference} />
+                          ) : null}
+                          {activeSection === "general" && isDesktop ? (
+                            <>
+                              <OfficialReleaseSection
+                                systemService={localHostServices.systemService}
+                              />
+                              <OfficialRewardsSection
+                                credentialService={localHostServices.credentialService}
+                                oauthService={localHostServices.oauthService}
+                              />
+                            </>
                           ) : null}
                         </div>
                         <div className="space-y-8">
@@ -2172,6 +2171,11 @@ export function SettingsPage({
                               />
                               <ArchiveManagement />
                             </div>
+                        ) : activeSection === "backup" ? (
+                          <BackupSettingsSection
+                            workspacePath={activeWorkspacePath ?? undefined}
+                            workspaceIdentity={activeWorkspaceIdentity}
+                          />
                           ) : activeSection === "usage" ? (
                             <UsageStatsSection
                               activeTab={usageActiveTab}

@@ -100,6 +100,8 @@ export const ServiceChannels = {
   Setting: "setting",
   /** 凭据管理（从 main IPC 迁移到 host RPC） */
   Credential: "credential",
+  /** 自助备份（自托管：用户自己的 OSS + 自持加密） */
+  SelfBackup: "self-backup",
   /** Computer Use Helper macOS 权限服务 */
   CuaPermission: "cua-permission",
   /** producer-owned PiP session presentation client */
@@ -125,6 +127,8 @@ export const ServiceChannels = {
   ConversationShare: "conversation-share",
   /** 文件系统监视服务 */
   FileWatcher: "file-watcher",
+  /** 移动端远程控制（自建中继）状态 */
+  WebRemoteControl: "web-remote-control",
   /** OAuth 认证服务 */
   OAuth: "oauth",
   /** 新 Provider Config 的设置读写 Facade */

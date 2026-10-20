@@ -3,7 +3,7 @@
 import {
   BUILTIN_MODEL_PROVIDER_IDS,
   resolveOffPeakProviderId,
-  buildRuntimeZCodeApiUrl,
+  buildOfficialZCodeApiUrl,
   type OffPeakCodingPlanKind,
   type OffPeakCodingPlanSupport,
   type OffPeakCodingPlanUnsupportedReason,
@@ -334,7 +334,7 @@ export function createOffPeakOriginResolver(deps: {
       if (!originPromise) {
         originPromise = (async () => {
           if (!isOffPeakMockEnabled(env)) {
-            return new URL(buildRuntimeZCodeApiUrl(env, "/")).origin;
+            return new URL(buildOfficialZCodeApiUrl("/")).origin;
           }
           const gateway = await startOffPeakMockGateway({
             logger: deps.logger,

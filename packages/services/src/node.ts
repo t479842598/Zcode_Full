@@ -387,6 +387,8 @@ import { createLocalConversationShareArtifactSource } from "./conversation-share
 import { ConversationShareHttpClient } from "./conversation-share/conversationShareHttpClient.js";
 import { IBotsService } from "./bots/bots.js";
 import { IFileWatcherService } from "./fileWatcher/fileWatcher.js";
+import { IWebRemoteControlService } from "./webRemoteControl/webRemoteControl.js";
+import { IBackupService } from "./selfBackup/selfBackup.js";
 import { IOAuthService } from "./oauth/oauth.js";
 import { ISourceServerWorkspaceService } from "./source-server-workspace/sourceServerWorkspace.js";
 import { IUsageStatsService } from "./usage-stats/usageStats.js";
@@ -423,6 +425,7 @@ import { createLegacyTeamOrganizationResolver } from "./model-provider/legacyTea
 import { createObservableSettingService } from "./setting/observableSettingService.js";
 import { createCredentialService } from "./credential/credentialService.js";
 import { createBroadcastService } from "./broadcast/broadcastService.js";
+import { createBackupService } from "./selfBackup/selfBackupService.js";
 import { createZCodeAgentService } from "./zcode-agent/zcodeAgentService.js";
 import type { ZCodeAgentCommandResolver } from "./zcode-agent/zcodeAgentProcessManager.js";
 import { buildAgentTelemetrySpawnEnv } from "./zcode-agent/agentTelemetryEnv.js";
@@ -442,6 +445,7 @@ import {
 export type { BotProjectConnection } from "#src/bot-project-runtime/contract.js";
 import type { SessionMessageSendRequested } from "#src/session/sessionMailbox.js";
 import { createFileWatcherService } from "./fileWatcher/fileWatcherService.js";
+import { createWebRemoteControlService } from "./webRemoteControl/webRemoteControlService.js";
 import { createOAuthService } from "./oauth/oauthService.js";
 import {
   isOAuthBusinessRequest,
@@ -616,6 +620,7 @@ import {
   BIGMODEL_PROVIDER_ID,
   type ProviderFamilyDomain,
   type ServiceAuthorityMode,
+  DEFAULT_ZCODE_ENDPOINT_ORIGIN,
   resolveRuntimeZCodeEndpointOrigin,
   resolveSafeTelemetryHostname,
   type BrowserBackendDescriptor,
@@ -632,9 +637,9 @@ import {
   ZAI_PROVIDER_ID,
   zcodeAccountAccessSchema,
   zcodeProviderAccountAccessSchema,
-  ZCODE_VERSION,
+  ZCODE_REPORT_VERSION,
   ZCODE_ENV,
-  buildRuntimeZCodeApiUrl,
+  buildOfficialZCodeApiUrl,
 } from "@zcode/shared";
 
 // 这些 conversation-share 实现依赖 Node 文件系统；仅通过 @zcode/services/node 暴露，
@@ -1322,10 +1327,8 @@ export function createLocalServices(options: {
   const settingService = createObservableSettingService(
     options?.settingService ?? localSettings!.service,
   );
-  const resolveCurrentZCodeEndpointOrigin = async () =>
-    resolveRuntimeZCodeEndpointOrigin(process.env, {
-      overrideOrigin: (await settingService.get()).zcodeEndpointOrigin,
-    });
+  // 账号/账单/内置模型与Agent共享官方业务origin；relay及更新由Desktop独立配置。
+  const resolveCurrentZCodeEndpointOrigin = () => DEFAULT_ZCODE_ENDPOINT_ORIGIN;
   let invalidateProjectTokens = () => {};
   let invalidatePluginUiAccounts: (() => void) | undefined;
   const provisioningOAuthKeys = new Set<string>(PROVIDER_PROVISIONING_OAUTH_CREDENTIAL_KEYS);
@@ -1510,7 +1513,7 @@ export function createLocalServices(options: {
     zcodeBuiltinEnvironment: {
       environmentConfigRoot: resolveAppConfigDir(),
       platform: clientConfigPlatform,
-      appVersion: ZCODE_VERSION,
+      appVersion: ZCODE_REPORT_VERSION,
       resolveEndpointOrigin: resolveCurrentZCodeEndpointOrigin,
       onRefreshResult: (event) => {
         if (event.result === "updated")
@@ -1522,7 +1525,7 @@ export function createLocalServices(options: {
           apiClient,
           endpointOrigin,
           signal,
-          appVersion: ZCODE_VERSION,
+          appVersion: ZCODE_REPORT_VERSION,
           platform: clientConfigPlatform,
         }),
     },
@@ -2229,6 +2232,8 @@ export function createLocalServices(options: {
       ? { accountProviderConfigSource: agentAccountProviderConfigSource }
       : {}),
     accountRequestAuthService,
+    allowStartPlanVerificationInteraction: options?.serviceAuthorityMode === "desktop-local",
+    resolveStartPlanCaptchaConfig: () => codingPlanSubscriptionService.getCaptchaConfig(),
     ...(modelSelectionReadinessSource ? { modelSelectionReadinessSource } : {}),
     authorizeLocalMediaPreviewPath: options?.authorizeLocalMediaPreviewPath,
     ...offPeakToolWiring,
@@ -2308,8 +2313,7 @@ export function createLocalServices(options: {
     }),
     // host 是身份权威边界：provenance/origin 必须在这里再校验一次，不能只依赖 agent
     // adapter 的 fetch wrapper。判定实现与 CLI 侧共用 @zcode/shared 的同一份，避免分叉。
-    // origin 解析复用 resolveCurrentZCodeEndpointOrigin——与闲时任务同口径（含 settings
-    // 覆盖），否则会出现"闲时任务能连、官方 MCP 连不上"。
+    // 官方 MCP 与账号/闲时业务统一使用官方 origin，不继承中继或更新地址。
     // dev 开关必须同样传入，否则本地自测会被 host 单方面拒绝。
     officialMcpTrustedOrigins: createOfficialMcpTrustedOriginRegistry({
       devTrustedOriginsRaw: process.env[OFFICIAL_MCP_DEV_TRUSTED_ORIGINS_ENV],
@@ -2385,8 +2389,7 @@ export function createLocalServices(options: {
           noProxy: agentNetwork.noProxy,
           caCertPath: settings.httpProxyCaCertPath,
         }),
-        // 把 host 解析出的权威 origin（含 settings 覆盖）下发给 agent，否则 agent 侧只按
-        // env 推导，test env + 自定义端点时两侧信任判定的输入分叉、官方 MCP 整体 fail closed。
+        // Agent 的官方模型/MCP 与 Host 使用同一业务 origin，中继仍由 Desktop 独立持有。
         ...buildAgentEndpointOriginEnv(await resolveCurrentZCodeEndpointOrigin()),
         // broker 凭据（socket/token）注入 agent spawn env，让内置 zcode-cua plugin 的
         // computer-use MCP server 经 __zcode-plugin-host 恢复 token 后连上 broker。
@@ -2614,7 +2617,7 @@ export function createLocalServices(options: {
     // 分享运行时始终走真实 API；测试/Mock 场景应在 service 单测或 Web fixture 中显式注入，
     // 不能让开发环境默认生成仅存在于进程内存的 mock-share 链接。
     apiClient,
-    baseUrl: buildRuntimeZCodeApiUrl(process.env, "/api/v1"),
+    baseUrl: buildOfficialZCodeApiUrl("/api/v1"),
     tokenProvider: async (): Promise<string | null> => {
       const activeProvider = await oauthCredentialRepo.getActiveProvider();
       if (!activeProvider) {
@@ -2647,8 +2650,9 @@ export function createLocalServices(options: {
         apiClient,
         getToken: () => credentialService.load("zcodejwttoken"),
         getDeviceMid: () => options?.agentTelemetry?.getDeviceMid?.(),
-        baseUrl: buildRuntimeZCodeApiUrl(process.env, "/"),
-        appVersion: ZCODE_VERSION,
+        // 自托管：营销素材走官方业务 origin（不随 relay 漂移），版本号用去 selfhost 后缀的上报版本。
+        baseUrl: buildOfficialZCodeApiUrl("/"),
+        appVersion: ZCODE_REPORT_VERSION,
         onSnapshot: (snapshot) => marketingAssets.accept(snapshot),
       }),
     )
@@ -2699,6 +2703,10 @@ export function createLocalServices(options: {
       }),
     )
     .register(IFileWatcherService, createFileWatcherService())
+    // 移动端远程控制（自建中继）：host 启动中继桥后回填状态；见 desktop/host/relayDeviceBootstrap.ts
+    .register(IWebRemoteControlService, createWebRemoteControlService())
+    // 自助备份（自托管）：用户自己的 OSS + 自持加密；配置读 Setting + Credential
+    .register(IBackupService, createBackupService({ settingService, credentialService }))
     .register(IOAuthService, oauthService)
     .register(ISourceServerWorkspaceService, sourceServerWorkspaceService)
     .register(
@@ -2718,7 +2726,7 @@ export function createLocalServices(options: {
         apiClient,
         resolveRequestContext: async () => ({
           endpointOrigin: await resolveCurrentZCodeEndpointOrigin(),
-          appVersion: ZCODE_VERSION,
+          appVersion: ZCODE_REPORT_VERSION,
           platform: `${process.platform}-${process.arch}`,
         }),
       }),

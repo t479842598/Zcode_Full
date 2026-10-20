@@ -38,6 +38,7 @@ import {
   Maximize,
   Palette,
   Settings,
+  Smartphone,
   User,
   ZoomIn,
   ZoomOut,
@@ -49,12 +50,13 @@ import { useShortcutCommandLabel } from "@/shortcuts/useShortcutBindings.js";
 import { useZCodeStore } from "@/store/StoreProvider.js";
 import { normalizeInterfaceMode } from "@/lib/interfaceMode.js";
 import type { Theme } from "@/useTheme.js";
-import { WorkspaceWebRemoteControlTrigger } from "@/WorkspaceWebRemoteControlTrigger.js";
 import {
   WorkspaceSidebarFooterPlanBadge,
   WorkspaceSidebarFooterUsageSummaryContent,
   useWorkspaceSidebarFooterUsageSummaryState,
 } from "@/WorkspaceSidebarFooterUsageSummary.js";
+// 自托管：移动端远程控制入口改用自建弹窗（自建中继桥），不走官方闭源 V4 trigger。
+import { WebRemoteControlDialog } from "@/WebRemoteControlDialog.js";
 
 const DESKTOP_ZOOM_MIN_LEVEL = -3;
 const DESKTOP_ZOOM_MAX_LEVEL = 5;
@@ -103,8 +105,6 @@ export const WorkspaceSidebarFooter = memo(function WorkspaceSidebarFooterCompon
   user,
   workspacePath,
   workspaceIdentity,
-  workspaceRemoteSessionId,
-  activeTaskId,
   isDesktop = false,
   banner,
   className,
@@ -124,6 +124,10 @@ export const WorkspaceSidebarFooter = memo(function WorkspaceSidebarFooterCompon
   user?: UserInfo | null;
   workspacePath?: string;
   workspaceIdentity?: string;
+  /**
+   * 自托管：官方 V4 trigger 的入参（workspaceRemoteSessionId / activeTaskId）随该组件被自建入口替换而不再消费，
+   * 但仍在类型上保留，以免官方 3.16 的调用方（SettingsPage / project-sidebar / 测试）签名断裂。
+   */
   workspaceRemoteSessionId?: string;
   activeTaskId?: string | null;
   isDesktop?: boolean;
@@ -193,6 +197,8 @@ export const WorkspaceSidebarFooter = memo(function WorkspaceSidebarFooterCompon
   const usageButtonClick = onUsageClick ?? onSettingsButtonClick;
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const [desktopZoomLevel, setDesktopZoomLevel] = useState(0);
+  // 自托管：移动端远程控制弹窗（官方闭源功能，自托管版自建）
+  const [webRemoteOpen, setWebRemoteOpen] = useState(false);
   const runDesktopZoomCommand = useCallback(
     (command: (typeof DesktopCommandIds)["ZoomIn" | "ZoomOut" | "ResetZoom"]) => {
       void platform.executeDesktopCommand(command);
@@ -467,13 +473,22 @@ export const WorkspaceSidebarFooter = memo(function WorkspaceSidebarFooterCompon
         </DropdownMenu>
         <div className="flex shrink-0 items-center gap-1.5">
           {isDesktop && workspacePath ? (
-            <WorkspaceWebRemoteControlTrigger
-              workspacePath={workspacePath}
-              workspaceIdentity={workspaceIdentity}
-              remoteSessionId={workspaceRemoteSessionId}
-              initialTaskId={activeTaskId ?? undefined}
-              compact
-            />
+            <ControlHintTooltip title={intl.formatMessage({ id: "webRemoteControl.trigger" })}>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-lg"
+                data-testid="web-remote-control-button"
+                aria-label={intl.formatMessage({ id: "webRemoteControl.trigger" })}
+                onClick={() => setWebRemoteOpen(true)}
+              >
+                <Smartphone
+                  aria-hidden="true"
+                  strokeWidth={2}
+                  className="size-5 shrink-0 text-sky-500 dark:text-sky-400"
+                />
+              </Button>
+            </ControlHintTooltip>
           ) : null}
           <ControlHintTooltip title={settingsButtonLabel}>
             <Button
@@ -489,6 +504,7 @@ export const WorkspaceSidebarFooter = memo(function WorkspaceSidebarFooterCompon
             </Button>
           </ControlHintTooltip>
         </div>
+        <WebRemoteControlDialog open={webRemoteOpen} onOpenChange={setWebRemoteOpen} />
       </div>
     </footer>
   );

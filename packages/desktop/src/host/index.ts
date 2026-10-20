@@ -18,6 +18,7 @@ import { createHostDatabaseStartup } from "./database-startup/hostDatabaseStartu
 import { isOffPeakTerminalStatus } from "@zcode/shared";
 import { createHostNetworkCapture } from "./hostNetworkCapture.js";
 import { randomUUID } from "node:crypto";
+import { homedir } from "node:os";
 import { createPluginSandboxRegistrationBridge } from "./pluginSandbox/index.js";
 import { createWindowTopicResourceRelay } from "./windowTopicResourceRelay.js";
 import {
@@ -32,6 +33,9 @@ import { registerHostNetworkTelemetry, stopHostNetworkTelemetry } from "./hostNe
 import { registerHostServiceResourceTelemetry } from "./hostServiceResourceTelemetry.js";
 import { resolveResourceTelemetryEnvironmentKey } from "./hostResourceTelemetryEnvironment.js";
 import { reportHostSessionCreate } from "./hostSessionCreateTelemetry.js";
+import { startRelayDeviceBridge, type RelayDeviceBridgeHandle } from "./relayDeviceBootstrap.js";
+import { toRelayAppTask } from "./relayAppProtocol.js";
+import { overlayLiveRelayTaskStatus } from "./relayLiveTaskStatus.js";
 import { createBrowserControlMainBridge } from "./browserControlMainBridge.js";
 import { materializeBrowserRecordingArtifact } from "./browserRecordingArtifactMaterializer.js";
 import {
@@ -60,6 +64,8 @@ import {
   createZCodeAgentConnectionScope,
   type ZCodeAgentV4ClientMode,
   collectServiceMemoryDiagnostics,
+  IWebRemoteControlService,
+  type WebRemoteControlService,
 } from "@zcode/services";
 import {
   createLocalServices,
@@ -1847,6 +1853,8 @@ async function ensureSourceServerConnectionManager(): Promise<SourceServerConnec
   });
   return await sourceServerRuntimeInitializeFlight;
 }
+/** 自建中继桥：手机端远程控制通道；未启用/连不上时为 null */
+let relayDeviceBridge: RelayDeviceBridgeHandle | null = null;
 /** 本地 host services 的资源遥测订阅；远端连接的订阅由各自的 connection handle 持有。 */
 let activeLocalResourceTelemetry: IDisposable | null = null;
 // 资源管理器采样只在 main 请求时执行一次，Host 不维护任何周期定时器。
@@ -2779,6 +2787,8 @@ async function disposeHostResources(reason: string): Promise<HostShutdownResult>
     hostNetworkCapture.setCaptureId(null);
     hostSelfResourceTelemetry.stop();
     disposeLocalResourceTelemetry();
+    relayDeviceBridge?.dispose();
+    relayDeviceBridge = null;
     disposeAttachedServicePorts();
     windowHostControllerRuntime.dispose();
     for (const key of Array.from(cronRunSubscriptions.keys())) {
@@ -3979,6 +3989,107 @@ parentPort.on("message", async (e: Electron.MessageEvent) => {
             return initializedServices;
           },
         });
+        // 自建中继：让手机端（zcode.tang74.top/remote/v4）远程操控本机 Host。
+        // 远程控制是可选能力，失败只记日志，绝不阻断本地启动。
+        // 工作区名单取 main 传下来的 agentWarmupTargets（按最近使用排序，最多 3 个）；
+        // 它比 msg.workspacePath 可靠 —— 后者可能只是默认的 home 目录，手机端拿到会打不开。
+        const homeDir = homedir();
+        const relayWorkspaces = (
+          msg.agentWarmupTargets && msg.agentWarmupTargets.length > 0
+            ? msg.agentWarmupTargets.map((target) => ({
+                workspacePath: target.workspacePath,
+                ...(target.workspaceIdentity
+                  ? { workspaceIdentity: target.workspaceIdentity }
+                  : {}),
+              }))
+            : msg.workspacePath
+              ? [
+                  {
+                    workspacePath: msg.workspacePath,
+                    ...(msg.workspaceIdentity ? { workspaceIdentity: msg.workspaceIdentity } : {}),
+                  },
+                ]
+              : []
+        ).filter(
+          // home 根和 / 不是项目目录：手机端拿到只会「打开工作区」失败，直接不报。
+          (item) => item.workspacePath !== "/" && item.workspacePath !== homeDir,
+        );
+        if (
+          process.env.ZCODE_SELFHOST_RELAY_DISABLED !== "1" &&
+          msg.deviceMid &&
+          relayWorkspaces.length > 0
+        ) {
+          try {
+            relayDeviceBridge = startRelayDeviceBridge({
+              services,
+              deviceMid: msg.deviceMid,
+              workspaces: relayWorkspaces,
+              // 静态的 relayWorkspaces 只有 main 传来的 agentWarmupTargets（上限 3 个），
+              // 手机端会抱怨「项目没显示全」。这里改成每次列表请求都去 Setting 里取完整名单
+              // （已打开的 tab + 最近项目），并顺带把任务列表一并提供给手机端。
+              resolveWorkspaces: async () => {
+                const settings = await settingService.get();
+                const seen = new Set<string>();
+                const list: Array<{ workspacePath: string; workspaceIdentity?: string }> = [];
+                const push = (item: {
+                  workspacePath: string;
+                  workspaceIdentity?: string;
+                }): void => {
+                  const key = item.workspaceIdentity?.trim() || item.workspacePath;
+                  if (!key || seen.has(key)) return;
+                  seen.add(key);
+                  list.push(item);
+                };
+                // 已打开的会话优先，其次是最近项目；remote 目标本机没法 bridge，不报。
+                for (const entry of settings.lastWorkspaceSession ?? []) {
+                  if (entry.kind === "local") push({ workspacePath: entry.workspacePath });
+                }
+                for (const workspacePath of settings.recentProjects ?? []) {
+                  if (typeof workspacePath === "string") push({ workspacePath });
+                }
+                return list;
+              },
+              resolveTasks: async () => {
+                const taskService = services.getOptional(IZCodeTaskService);
+                if (!taskService) return [];
+                const settings = await settingService.get();
+                const scopes = [
+                  ...(settings.lastWorkspaceSession ?? [])
+                    .filter((entry) => entry.kind === "local")
+                    .map((entry) => ({ workspacePath: entry.workspacePath })),
+                  ...(settings.recentProjects ?? []).map((workspacePath) => ({ workspacePath })),
+                ];
+                if (scopes.length === 0) return [];
+                const result = await taskService.listTaskList({
+                  kind: "active",
+                  workspaceScopes: scopes,
+                  sortBy: "updated",
+                  limit: 100,
+                });
+                const agentService = services.getOptional(IZCodeAgentService);
+                const items = agentService
+                  ? await overlayLiveRelayTaskStatus(result.items, (request) => agentService.listSessions(request))
+                  : result.items;
+                return items.map(toRelayAppTask);
+              },
+              ...(msg.workspacePath &&
+              relayWorkspaces.some((item) => item.workspacePath === msg.workspacePath)
+                ? { activeWorkspacePath: msg.workspacePath }
+                : {}),
+              log: (message, details) =>
+                details === undefined ? logger.info(message) : logger.info(message, details),
+            });
+          } catch (error) {
+            logger.warn("relay bridge failed to start", {
+              message: error instanceof Error ? error.message : String(error),
+            });
+          }
+          // 把中继桥状态回填给 UI 的「移动端远程控制」入口。
+          const webRemoteControl = services.getOptional(IWebRemoteControlService) as
+            | WebRemoteControlService
+            | undefined;
+          webRemoteControl?.attachBridge(relayDeviceBridge);
+        }
         const zcodeTaskService = services.getOptional(IZCodeTaskService);
         if (zcodeTaskService) {
           const reportingZCodeTaskService = createReportingRemoteZCodeTaskService(

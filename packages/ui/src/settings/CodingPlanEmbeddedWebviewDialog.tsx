@@ -32,7 +32,8 @@ import {
   CodingPlanWebviewChannels,
   type CodingPlanPurchaseCompletePayload,
   ZCODE_ENV,
-  ZCODE_VERSION,
+  // 自托管：对外上报官方接口的版本需剥离 -selfhost 后缀，否则官网会拒绝该 app_version。
+  ZCODE_REPORT_VERSION,
 } from "@zcode/shared";
 
 interface CodingPlanEmbeddedWebviewDialogProps {
@@ -193,7 +194,7 @@ export function CodingPlanEmbeddedWebviewDialog({
           funnelContext,
           deviceMid,
           userId,
-          appVersion: ZCODE_VERSION,
+          appVersion: ZCODE_REPORT_VERSION,
         });
         const script = createCodingPlanAuthInjectionScript({
           provider,

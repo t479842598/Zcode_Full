@@ -8,5 +8,10 @@ if (
     e2e: process.env.VITE_ZCODE_E2E_STORE_BRIDGE === "1",
   })
 ) {
+  // 自托管：进入邀请页前先清掉上一轮嵌入式会话残留的凭据，
+  // 否则陈旧 token 会盖过 renderer 在 dom-ready 之后注入的新 token。
+  for (const key of ["oauth:zai:access_token", "oauth:bigmodel:access_token", "zcodejwttoken"]) {
+    window.localStorage.removeItem(key);
+  }
   contextBridge.executeInMainWorld({ func: installRewardsPageBridge, args: [] });
 }

@@ -20,6 +20,7 @@ import {
   HardDrive,
   Keyboard,
   FileSearch,
+  HardDriveUpload,
 } from "lucide-react";
 import { isSettingsSectionEnabled, type SettingsSectionId } from "@/lib/settingsNavigation.js";
 import type { Theme } from "@/useTheme.js";
@@ -159,6 +160,12 @@ const BASE_SETTINGS_SECTIONS: SettingsSectionDefinition[] = [
     icon: FileSearch,
     titleId: "settings.workspaceFileSearch.title",
     groupId: "basics",
+  },
+  {
+    id: "backup",
+    icon: HardDriveUpload,
+    titleId: "settings.backup.title",
+    groupId: "dataAndStats",
   },
   {
     id: "usage",

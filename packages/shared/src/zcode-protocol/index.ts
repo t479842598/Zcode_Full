@@ -2780,7 +2780,14 @@ export const zcodeUserInputResponseSchema = z
   .strict();
 export type ZCodeUserInputResponse = z.infer<typeof zcodeUserInputResponseSchema>;
 
-export const zcodeProviderRuntimeHeadersRequestReasonSchema = z.enum(requestVerificationReasons);
+// 自托管：模型请求带验证码证明重试时复用本通道，官方正版只暴露 model-request。
+const zcodeProviderRuntimeHeadersRequestReasons = [
+  ...requestVerificationReasons,
+  "captcha-retry",
+] as const;
+export const zcodeProviderRuntimeHeadersRequestReasonSchema = z.enum(
+  zcodeProviderRuntimeHeadersRequestReasons,
+);
 export const zcodeProviderRuntimeHeadersRequestParamsSchema = z
   .object({
     requestId: nonEmptyString,

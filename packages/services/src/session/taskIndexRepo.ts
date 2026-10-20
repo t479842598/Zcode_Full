@@ -316,6 +316,25 @@ function migrateLegacyTaskMetaJson(
   return zcodeTaskMetaSchema.parse(meta) as ZCodeTaskMeta;
 }
 
+/**
+ * 从 meta_json 里读出 status。
+ * rowToMeta 以 meta_json 为权威（标量列不覆盖 status），所以对账时必须以它为准。
+ * 解析失败按未知处理。
+ */
+/** 清理残留 running 时只需要这四列。 */
+type TaskStatusColumns = Pick<
+  TaskIndexRow,
+  "workspace_key" | "task_id" | "task_status" | "meta_json"
+>;
+
+function parseMetaJsonStatus(metaJson: unknown): unknown {
+  try {
+    return (JSON.parse(String(metaJson ?? "{}")) as { status?: unknown }).status;
+  } catch {
+    return undefined;
+  }
+}
+
 export class TaskIndexRepo {
   /** 启动迁移结果，供 main 提示；不参与任务事实或组织状态。 */
   migrationBackupSkipped = false;
@@ -392,6 +411,11 @@ export class TaskIndexRepo {
       this.db.exec("PRAGMA journal_mode = WAL");
       this.db.exec("PRAGMA synchronous = NORMAL");
     }
+    // 上次进程被杀/崩溃时正在跑的会话不会走到终态收敛，task_status 会永远停在 running
+    // （手机端用 displayStatus === "running" 判断运行中，会把很久以前就结束的对话
+    // 一直显示成「正在运行」）。索引库按数据目录一份、由本机进程独占驱动，
+    // 所以进程启动时任何 running 都必然是残留。
+    this.clearOrphanedRunningStatus();
     const taskMigration = await runTasksDatabaseMigrations(this.db, path);
     const migration = await projectStorage.migrate(this.getDatabase(), {
       settings: this.migrationSettings,
@@ -412,6 +436,66 @@ export class TaskIndexRepo {
       name: string;
     }>;
     return columns.some((item) => item.name === column);
+  }
+
+  /**
+   * 清掉上次进程遗留的 running 状态（幂等，每次 bootstrap 自愈）。
+   *
+   * 会话跑到终态时由 zcodeTaskIndexSyncer.applyTerminalTransition 把 status 收敛成
+   * completed/error；但进程被杀（崩溃/强退）时这一步不会执行，task_status 会永远停在
+   * running。索引库由本机进程独占驱动，所以启动时任何 running 都必然是残留。
+   *
+   * 清成 NULL（= 未知结果）而不是 completed/error：不编造真实结果。
+   * 不清 updated_at：残留清理不应改变列表排序。
+   */
+  private clearOrphanedRunningStatus(): void {
+    const database = this.getDatabase();
+    // 全新安装时 tasks 表由后续迁移创建，此处还没有表。
+    const hasTasksTable = database
+      .prepare(`SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'tasks'`)
+      .get();
+    if (!hasTasksTable) {
+      return;
+    }
+    // 列与 meta_json 两处都要清：rowToMeta 以 meta_json 为权威，标量列只覆盖
+    // taskId / workspace / identity / unreadAt / cron / offPeak / titleOverridden，
+    // **不含 status**。只清 task_status 列会被 meta_json 里的旧 running 盖回来。
+    const candidates = database
+      .prepare(
+        `SELECT workspace_key, task_id, task_status, meta_json FROM tasks
+         WHERE task_status = 'running' OR meta_json LIKE '%"status":"running"%'`,
+      )
+      .all() as unknown as TaskStatusColumns[];
+    const orphaned = candidates.filter((row) => {
+      if (row.task_status === "running") return true;
+      return parseMetaJsonStatus(row.meta_json) === "running";
+    });
+    if (orphaned.length === 0) {
+      return;
+    }
+    const clearBoth = database.prepare(
+      `UPDATE tasks SET task_status = NULL, meta_json = ? WHERE workspace_key = ? AND task_id = ?`,
+    );
+    const clearColumnOnly = database.prepare(
+      `UPDATE tasks SET task_status = NULL WHERE workspace_key = ? AND task_id = ?`,
+    );
+    for (const row of orphaned) {
+      const workspaceKey = row.workspace_key;
+      const taskId = row.task_id;
+      let nextJson: string | null = null;
+      try {
+        const meta = JSON.parse(String(row.meta_json ?? "")) as Record<string, unknown>;
+        if (meta && typeof meta === "object" && !Array.isArray(meta)) {
+          delete meta["status"];
+          nextJson = JSON.stringify(meta);
+        }
+      } catch {
+        // meta_json 坏了就只清列，不覆盖原文
+      }
+      if (nextJson === null) clearColumnOnly.run(workspaceKey, taskId);
+      else clearBoth.run(nextJson, workspaceKey, taskId);
+    }
+    logger.warn(undefined, `清理进程遗留的 running 任务状态 count=${orphaned.length}`);
   }
 
   /**

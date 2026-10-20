@@ -1,4 +1,4 @@
-import { ZCODE_VERSION, type ZCodeEnv } from "@zcode/shared";
+import { ZCODE_REPORT_VERSION, type ZCodeEnv } from "@zcode/shared";
 
 declare const __ZCODE_REMOTE_CDN_RELEASE_ROOTS__: readonly string[] | undefined;
 
@@ -49,10 +49,17 @@ export function resolveRemoteCdnBaseUrls(options: ResolveRemoteCdnOptions = {}):
     return [normalizeBaseUrl(overrideBaseUrl)];
   }
 
+  // 自托管：运行时环境变量优先，可把 remote runtime 资源指向自建 CDN。
+  // 版本号回退用 ZCODE_REPORT_VERSION：剥掉 -selfhost.N 后缀后才是官方资源目录名。
+  const version = options.version ?? ZCODE_REPORT_VERSION;
+  const runtimeReleaseRoot = process.env.ZCODE_CDN_BASE_URL?.trim();
+  if (runtimeReleaseRoot) {
+    return [`${normalizeBaseUrl(runtimeReleaseRoot)}/zcode/electron/releases/${version}`];
+  }
+
   const orderedReleaseRoots = shouldPreferDomesticRemoteCdn(options)
     ? [REMOTE_CDN_RELEASE_ROOTS.domestic, REMOTE_CDN_RELEASE_ROOTS.overseas]
     : [REMOTE_CDN_RELEASE_ROOTS.overseas, REMOTE_CDN_RELEASE_ROOTS.domestic];
-  const version = options.version ?? ZCODE_VERSION;
 
   if (options.env === "test") {
     return [`${TEST_REMOTE_CDN_RELEASE_ROOT}/${version}`];

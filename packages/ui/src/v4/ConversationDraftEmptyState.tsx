@@ -11,6 +11,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { ConversationDraftAttribution } from "@/v4/ConversationDraftAttribution.js";
 import darkEmptyStateLogoUrl from "@/assets/Z.svg";
 import { cn } from "@/components/lib/utils.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
@@ -237,6 +238,7 @@ export function ConversationDraftEmptyState({
         </span>
         <span>{greeting}</span>
       </p>
+      <ConversationDraftAttribution />
     </div>
   );
 }

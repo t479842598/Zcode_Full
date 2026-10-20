@@ -86,6 +86,7 @@ export function useOAuth() {
           return;
         }
 
+        // 自托管只分离中继/更新，账号仍使用官方授权和原有凭据服务。
         platform.registerOAuthState({ state, provider: startedProvider });
         setOAuthPollingActive(
           startedProvider === ZAI_PROVIDER_ID || startedProvider === BIGMODEL_PROVIDER_ID,

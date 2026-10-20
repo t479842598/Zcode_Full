@@ -1,6 +1,5 @@
 import { SidebarNativeTooltip } from "@/ControlHintTooltip.js";
-import { useCodingPlanEntryGate } from "@/settings/CodingPlanEntryButton.js";
-/* eslint-disable max-lines -- footer 套餐徽标、升级入口与 entitlement 探测共用同一份
+/* eslint-disable max-lines -- footer 套餐徽标与 entitlement 探测共用同一份
    provider 选择与 family 过滤上下文，拆文件会让 zai/bigmodel 对称性难以追踪。 */
 import { useEffect, useMemo } from "react";
 import {
@@ -9,7 +8,7 @@ import {
   resolveModelProviderFamilyIdByProviderId,
 } from "@zcode/shared";
 import { TID_SIDEBAR_CODING_PLAN_USAGE_BUTTON } from "@zcode/shared/test-ids";
-import { BarChart3Icon, RocketIcon } from "lucide-react";
+import { BarChart3Icon } from "lucide-react";
 import { DropdownMenuItem, DropdownMenuSeparator } from "@/components/ui/dropdown-menu.js";
 import {
   resolveCodingPlanUsageRemainingState,
@@ -24,16 +23,10 @@ import {
   resolveEntitledAccountProviderAccessFingerprint,
 } from "@/lib/accountProviderAccess.js";
 import { buildUsageEntitlementCacheKey } from "@/lib/usageEntitlementCache.js";
-import {
-  isMaxCodingPlanSnapshot,
-  resolveSidebarCodingPlanUpgradeFallbackProviderId,
-} from "@/lib/sidebarCodingPlanUpgrade.js";
-import {
-  createCodingPlanFunnelContext,
-  resolveCodingPlanEntryPlanState,
-  type CodingPlanFunnelContext,
-} from "@/lib/codingPlanFunnelTelemetry.js";
+import { resolveSidebarCodingPlanUpgradeFallbackProviderId } from "@/lib/sidebarCodingPlanUpgrade.js";
+import { type CodingPlanFunnelContext } from "@/lib/codingPlanFunnelTelemetry.js";
 import { type SidebarUsageCodingPlanProviderId } from "@/lib/sidebarUsageCodingPlanProviderPreference.js";
+
 import { useEnterpriseCodingPlanProducts } from "@/settings/model-provider-section/useEnterpriseCodingPlanProducts.js";
 import {
   buildCodingPlanUsageSources,
@@ -52,8 +45,6 @@ export {
   resolveSidebarFooterProfilePlanBadge,
 } from "@/WorkspaceSidebarFooterPlanBadgeHelpers.js";
 
-const TID_SIDEBAR_CODING_PLAN_UPGRADE_BUTTON = "sidebar-coding-plan-upgrade-button";
-
 export function WorkspaceSidebarFooterUsageSummary({
   enabled,
   onUsageClick,
@@ -63,6 +54,10 @@ export function WorkspaceSidebarFooterUsageSummary({
 }: {
   enabled: boolean;
   onUsageClick?: () => void;
+  /**
+   * 自托管：去商业化后 footer 不再渲染升级入口，但保留该 prop 以免调用方签名断裂。
+   * 官方 3.16 的 MarketingTouchProvider 仍会独立消费 usageState.upgradeTargetProviderId。
+   */
   onUpgradeClick?: (
     providerId: SidebarUsageCodingPlanProviderId,
     funnelContext: CodingPlanFunnelContext,
@@ -390,6 +385,8 @@ export function useWorkspaceSidebarFooterUsageSummaryState({
     selectedProviderId,
   });
   const visibleUsageState = usageState?.hasAnyActiveCodingPlan ? usageState : null;
+  // 自托管去商业化：footer 不再渲染升级入口；这里保留目标 provider 解析，
+  // 因为官方 3.16 的 MarketingTouchProvider（营销弹窗/横幅）仍依赖该字段。
   const selectedUpgradeProviderId: SidebarUsageCodingPlanProviderId | undefined =
     selectedProviderId === BUILTIN_MODEL_PROVIDER_IDS.zaiIndividualCodingPlan ||
     selectedProviderId === BUILTIN_MODEL_PROVIDER_IDS.bigmodelIndividualCodingPlan
@@ -417,26 +414,24 @@ export type WorkspaceSidebarFooterUsageSummaryState = ReturnType<
 >;
 
 export function WorkspaceSidebarFooterUsageSummaryContent({
-  state,
   onUsageClick,
-  onUpgradeClick,
 }: {
+  /**
+   * 自托管：升级入口移除后，本组件不再需要 entitlement 状态；类型上保留该 prop，
+   * 以免官方 3.16 的调用方（footer / 测试）签名断裂。
+   */
   state: WorkspaceSidebarFooterUsageSummaryState;
   onUsageClick?: () => void;
+  /**
+   * 自托管：不再渲染升级入口（去商业化），但类型上保留该 prop，
+   * 以免官方 3.16 的调用方（SettingsPage / project-sidebar）签名断裂。
+   */
   onUpgradeClick?: (
     providerId: SidebarUsageCodingPlanProviderId,
     funnelContext: CodingPlanFunnelContext,
   ) => void;
 }) {
   const { intl } = useZCodeIntl();
-  const entryGate = useCodingPlanEntryGate();
-  const { providerEntitlements, upgradeTargetProviderId } = state;
-  const upgradeProviderSnapshot =
-    providerEntitlements.find((item) => item.providerId === upgradeTargetProviderId)?.snapshot ??
-    null;
-  const upgradeActionLabelId = isMaxCodingPlanSnapshot(upgradeProviderSnapshot)
-    ? "sidebar.usage.plan.renew"
-    : "sidebar.usage.plan.upgrade";
 
   return (
     <>
@@ -450,33 +445,6 @@ export function WorkspaceSidebarFooterUsageSummaryContent({
       >
         <BarChart3Icon className="size-4" />
         {intl.formatMessage({ id: "sidebar.usage.plan.openStats" })}
-      </DropdownMenuItem>
-      {/* 产品要求：升级入口始终显示；未解析出当前套餐时由当前 provider family 决定品牌。 */}
-      <DropdownMenuItem
-        data-testid={TID_SIDEBAR_CODING_PLAN_UPGRADE_BUTTON}
-        disabled={entryGate.status === "loading"}
-        aria-busy={entryGate.status === "loading"}
-        onSelect={() => {
-          if (entryGate.status !== "ready") {
-            entryGate.retry?.();
-            return;
-          }
-          onUpgradeClick?.(
-            upgradeTargetProviderId,
-            createCodingPlanFunnelContext({
-              providerId: upgradeTargetProviderId,
-              upgradeSource: "profile_menu",
-              eventRegion: "app.profile",
-              eventText: intl.formatMessage({ id: upgradeActionLabelId }),
-              entryPlanState: resolveCodingPlanEntryPlanState({
-                snapshot: upgradeProviderSnapshot,
-              }),
-            }),
-          );
-        }}
-      >
-        <RocketIcon className="size-4" />
-        {entryGate.label ?? intl.formatMessage({ id: upgradeActionLabelId })}
       </DropdownMenuItem>
     </>
   );
