@@ -798,6 +798,43 @@ exceptions:
       - packages/ui/src/settings/ShortcutSearchBar.tsx
       - packages/ui/src/settings/ShortcutSettingsSection.tsx
     reason: Existing upstream shortcut components and keycap primitive edited for shared controls, responsive layout and save admission; adopting the entire settings directory requires a separate boundary refactor.
+  - id: selfhost-appearance-customization
+    rule: unmanaged-new-file
+    paths:
+      - packages/ui/src/lib/appearanceCustomization.ts
+      - packages/ui/src/settings/AppearanceCustomizationCard.tsx
+    reason: 自托管版的外观定制（配色预设/强调色/背景图）是本地视觉偏好，读写的是 localStorage 与 CSS 变量，不依赖任何 Repo、Service 或 Runtime 实现，也没有跨模块导出；把它塞进某个 managed 模块会强行引入它并不需要的 requires 边。接管整个 ui 包不在本次范围，故按既有 shortcut-settings 先例登记例外。
+  # 自托管版（fork）整体定制：这些功能从 v3.16.2-selfhost.1 起就落在官方 legacy 包内，
+  # desktop / services / ui / zcode-cli 在 policy 里都是 managed: false。pre-push 的
+  # architecture:check 默认以 origin/main（官方基线）为 diff base，于是把整个 fork 的
+  # 定制差集都算成「新增文件」。把所有包接管为 managed 需要逐包写 contract.ts 与边界，
+  # 是独立的重构任务，不在发版范围内。按既有 shortcut-settings 先例登记一次准入。
+  - id: selfhost-fork-customizations
+    rule: unmanaged-new-file
+    paths:
+      - packages/desktop/src/host/relay
+      - packages/desktop/src/main/macosManualUpdate
+      - packages/desktop/src/main/selfhostUpdateOrigin.ts
+      - packages/desktop/src/main/databaseStartupTelemetry.ts
+      - packages/desktop/src/preload/rewardsWebview.ts
+      - packages/services/src/selfBackup/
+      - packages/services/src/webRemoteControl/
+      - packages/services/src/coding-plan-subscription/
+      - packages/services/src/model-provider/providerModelCatalog.ts
+      - packages/services/src/system/officialReleaseInfo.ts
+      - packages/services/src/zcode-agent/startPlanVerification.ts
+      - packages/ui/src/WebRemoteControlDialog.tsx
+      - packages/ui/src/root/ManualClaimPlanBanner.tsx
+      - packages/ui/src/root/startPlanCaptcha.ts
+      - packages/ui/src/root/useStartPlanVerification.ts
+      - packages/ui/src/settings/BackupSettingsSection.tsx
+      - packages/ui/src/settings/OfficialReleaseSection.tsx
+      - packages/ui/src/settings/OfficialRewardsSection.tsx
+      - packages/ui/src/settings/model-provider-section/ProviderModelCatalogDialog.tsx
+      - packages/ui/src/v4/ConversationDraftAttribution.tsx
+      - apps/zcode-cli/packages/adapters/src/model/official-coding-plan-gateway.ts
+      - apps/zcode-cli/packages/bootstrap/src/app/bundled-skills.ts
+    reason: 自托管版在官方 legacy 包内新增的功能文件（中继与移动远控、自助备份、未签名 macOS 自更新、自定义供应商取模型、StartPlan 免验证码、官方版本动态、任务状态同步、外观定制）。这些包在 policy 中均为 managed false，官方基线不含它们，故每次发版都会被判为新增；接管 desktop/services/ui/zcode-cli 为 managed 需要逐包补 contract 与依赖边，属独立重构，不在本次发布范围。
   - id: sidebar-workflow-tooltip-existing-ui-edit
     rule: unmanaged-new-file
     paths: [packages/ui/src/components/workflow-run-line/WorkflowRunRail.tsx]
