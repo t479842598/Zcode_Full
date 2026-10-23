@@ -8,8 +8,11 @@ import "@zcode/ui/styles.css";
 import {
   ResourceManagerApp,
   ZCodeIntlProvider,
+  applyAppearanceCustomization,
   applyUiFontSizePx,
+  loadAppearanceCustomization,
   loadUiFontSizePx,
+  subscribeToAppearanceStorageChanges,
   subscribeToUiFontSizeStorageChanges,
 } from "@zcode/ui";
 
@@ -56,6 +59,10 @@ applyResourceManagerTheme();
 // 首屏前显式应用，运行中再由 storage 事件同步，且不改变 html font-size 或接入业务 Host。
 applyUiFontSizePx(loadUiFontSizePx());
 subscribeToUiFontSizeStorageChanges();
+// 自定义外观（配色预设 / 强调色 / 背景图）同样是纯视觉偏好，不走 store；
+// 首屏前按 localStorage 应用一次，之后由 storage 事件跟随主窗口变化。
+applyAppearanceCustomization(loadAppearanceCustomization());
+subscribeToAppearanceStorageChanges();
 
 const root = document.getElementById("root");
 if (root) {

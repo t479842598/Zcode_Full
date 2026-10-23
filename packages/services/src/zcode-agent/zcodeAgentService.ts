@@ -403,6 +403,19 @@ const cuaOperationLogger = createServiceLogger("cua-operation-turn");
 const PLUGIN_MANAGEMENT_WORKSPACE_DIR_NAME = "plugin-workspace";
 // 状态探测完成后释放闲置的 MCP 子进程；只作用于控制面，不回收会话进程。
 const MCP_STATUS_LANE_IDLE_TIMEOUT_MS = 5 * 60_000;
+// 会话泳道离开这么久且没有在跑的任务就回收整棵 runtime（含其挂载的 MCP 子进程）。
+// 每个 workspace 一个 runtime，每个 runtime 再挂 7~9 个 MCP 子进程；永不回收会让
+// 开过几个项目的会话堆到十几 G。回收后下一次 start-if-needed 会自动重新拉起，
+// 代价是一次冷启动，收益是常驻内存随「实际在用」而不是「历史上开过」增长。
+const CHAT_LANE_IDLE_TIMEOUT_MS = 5 * 60_000;
+// 空闲回收后的冷却窗口：这段时间内的 start-if-needed 一律降级为 existing-only。
+//
+// 为什么必须有：runtime 被回收会广播 unavailable，UI 侧的被动观察（pending 命令对账、
+// ttft 时钟校准、conversation 重订阅）会在 20~30ms 内用 start-if-needed 把 runtime 拉回来，
+// 于是「回收 → 被动观察拉起 → 再空闲 → 再回收」无限自激，进程每轮翻新、内存不减。
+// 窗口取 30s，长于 UI 侧换代退避总和（250ms + 1s + 3s），保证退避重试也落在窗口内；
+// 用户显式写操作走 getClient，不受本窗口限制，仍能立刻把 runtime 拉起来。
+const IDLE_RECLAIM_RESPAWN_COOLDOWN_MS = 30_000;
 // 官方 Claude marketplace 首次接入需要 clone/copy GitHub 仓库，30s 默认协议超时会杀掉健康 agent。
 // 插件市场管理属于低频网络 I/O 操作，单独放宽超时，不影响普通会话消息的实时失败边界。
 const PLUGIN_MANAGEMENT_REQUEST_TIMEOUT_MS = 5 * 60_000;
@@ -1000,6 +1013,8 @@ interface CreateZCodeAgentServiceOptions extends Omit<
 > {
   /** 仅供 MCP 状态探测进程使用，不能把空闲回收传给 chat。 */
   mcpStatusIdleTimeoutMs?: number;
+  /** chat 主泳道的空闲回收毫秒数；缺省用 CHAT_LANE_IDLE_TIMEOUT_MS。 */
+  chatIdleTimeoutMs?: number;
   accountProviderConfigSource?: ProviderSource<AccountProviderConfigSnapshot>;
   accountRequestAuthService?: IAccountRequestAuthService;
   resolveStartPlanCaptchaConfig?: () => Promise<
@@ -1229,7 +1244,19 @@ export function resolveOffPeakToolSelection(
 export function createZCodeAgentService(
   options?: CreateZCodeAgentServiceOptions,
 ): IZCodeAgentService & { disposeAllAndWait(): Promise<void> } {
-  const processManager = new ZCodeAgentProcessManager(options);
+  // 会话泳道同样接入空闲回收：hasActiveWork 由调用方注入（task-index 活动集合），
+  // 到点时仍有任务在跑就只重新计时，避免把正在执行工具的 Agent 当成空闲回收。
+  const processManager = new ZCodeAgentProcessManager({
+    commandResolver: options?.commandResolver,
+    presentationSurface: options?.presentationSurface,
+    processLifecycleReporter: options?.processLifecycleReporter,
+    requestTimeoutMs: options?.requestTimeoutMs,
+    resolveSpawnEnv: options?.resolveSpawnEnv,
+    waitForSpawnAdmission: options?.waitForSpawnAdmission,
+    spawnFallbackCwd: options?.spawnFallbackCwd,
+    hasActiveWork: options?.hasActiveWork,
+    idleTimeoutMs: options?.chatIdleTimeoutMs ?? CHAT_LANE_IDLE_TIMEOUT_MS,
+  });
   // Windows indicator 与 macOS producer lifecycle client 共用已校验、去重的 sideband facts。
   const cuaOperationTurnTracker =
     options?.cuaOperationStateReporter || options?.onCuaPipSessionLifecycle
@@ -3583,6 +3610,15 @@ export function createZCodeAgentService(
         dynamicWorkflowPolicyMode: "disabled",
       });
       return existingClient;
+    }
+    // 刚被空闲回收的 workspace 在冷却窗口内只允许观察已有 runtime：
+    // 被动观察请求不能成为重新拉起进程的理由（否则回收动作会被自己的观察者抵消）。
+    const lastIdleReclaimAt = processManager.getLastIdleReclaimAt(resolveWorkspaceKey(params));
+    if (
+      lastIdleReclaimAt !== undefined &&
+      Date.now() - lastIdleReclaimAt < IDLE_RECLAIM_RESPAWN_COOLDOWN_MS
+    ) {
+      throw createRuntimeUnavailableError(params);
     }
     return (await getOrStartReadOnlyClient(params)).client;
   }

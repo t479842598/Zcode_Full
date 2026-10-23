@@ -79,6 +79,17 @@ export interface ZCodeAgentProcessManagerOptions {
    */
   idleTimeoutMs?: number;
   /**
+   * 空闲回收前的活体门禁：到点时若该 workspace 仍有在跑的任务，就重新计时而不是回收。
+   *
+   * 存在理由：pendingOperationRequestCount 只统计在飞 RPC，长跑 turn 里流式通知不进 pending，
+   * 计数可以是 0。没有这道门禁会把正在执行工具的 Agent 当作空闲杀掉。
+   */
+  hasActiveWork?: (context: {
+    workspacePath: string;
+    workspaceIdentity?: string;
+    workspaceKey: string;
+  }) => boolean;
+  /**
    * 仅当默认进程 cwd 等于目标 workspace 且该目录不可用时使用。
    * 业务 workspacePath/workspaceKey 不随 cwd 兜底改变。
    */
@@ -247,6 +258,26 @@ const serviceLog = createServiceLogger("zcode-agent");
 const log = (...args: unknown[]) => serviceLog.info(undefined, ...args);
 const warnLog = (...args: unknown[]) => serviceLog.warn(undefined, ...args);
 const errorLog = (...args: unknown[]) => serviceLog.error(undefined, ...args);
+
+/**
+ * 排障插桩：会话泳道空闲回收（idle-timeout）之后 runtime 会被立刻重新拉起，形成
+ * reclaim → respawn 的自激循环。现有日志只能看到「有 start 请求」，看不到**谁**发起。
+ * 这里把调用栈打出来定位真正触发源。
+ *
+ * 只在 ZCODE_TRACE_AGENT_START=1 时输出，生产默认静默；用 info 而非 debug，因为生产
+ * bundle 的 debug 是 no-op，排障时无从打开。
+ */
+const traceAgentStartCaller: (phase: string, workspaceKey: string) => void =
+  process.env.ZCODE_TRACE_AGENT_START === "1"
+    ? (phase, workspaceKey) => {
+        const frames = (new Error().stack ?? "")
+          .split("\n")
+          .slice(1, 14)
+          .map((line) => line.trim())
+          .filter((line) => line.length > 0);
+        log("ZCode agent start caller trace", { phase, workspaceKey, frames });
+      }
+    : () => undefined;
 
 const AGENT_STDERR_TAIL_MAX_LINES = 20;
 const AGENT_STDERR_LINE_MAX_CHARS = 1_000;
@@ -547,6 +578,15 @@ export class ZCodeAgentProcessManager {
   private readonly restartGenerationByWorkspaceKey = new Map<string, number>();
   private readonly runtimeGenerationByWorkspaceKey = new Map<string, number>();
   private readonly availableRuntimeIdentityByWorkspaceKey = new Map<string, string>();
+  /**
+   * 每个 workspace 最近一次因空闲被回收的时刻（毫秒）。
+   *
+   * 存在理由：runtime 被空闲回收后，UI 侧的被动观察（pending 命令对账、ttft 时钟校准、
+   * conversation 重订阅）会在几十毫秒内用 start-if-needed 反过来把 runtime 拉起来，
+   * 于是「回收 → 被动观察重新拉起 → 再空闲 → 再回收」形成无限自激，进程每轮翻新一次。
+   * 服务层据此在回收后的冷却窗口内把 start-if-needed 降级为 existing-only。
+   */
+  private readonly lastIdleReclaimAtByWorkspaceKey = new Map<string, number>();
   private readonly startAdmissionAbortControllersByWorkspaceKey = new Map<
     string,
     Set<AbortController>
@@ -579,6 +619,7 @@ export class ZCodeAgentProcessManager {
   private readonly spawnFallbackCwd: string | undefined;
   private readonly lane: string | undefined;
   private readonly idleTimeoutMs: number | undefined;
+  private readonly hasActiveWork: ZCodeAgentProcessManagerOptions["hasActiveWork"];
   private readonly runtimeRestartedEmitter = new Emitter<ZCodeAgentRuntimeRestartedEvent>();
   private readonly runtimeLifecycleEmitter = new Emitter<ZCodeAgentRuntimeLifecycleEvent>();
   private disposeAllInFlight: Promise<void> | undefined;
@@ -600,6 +641,7 @@ export class ZCodeAgentProcessManager {
     this.lane = options?.lane?.trim() || undefined;
     this.idleTimeoutMs =
       options?.idleTimeoutMs && options.idleTimeoutMs > 0 ? options.idleTimeoutMs : undefined;
+    this.hasActiveWork = options?.hasActiveWork;
   }
 
   private reportProcessLifecycle(
@@ -650,6 +692,11 @@ export class ZCodeAgentProcessManager {
       ) {
         return;
       }
+      // 长跑 turn 里 RPC 可能全部结清，但任务仍在执行工具；此时只重新计时，不回收。
+      if (this.hasActiveWork?.({ ...managed.workspace, workspaceKey })) {
+        this.scheduleIdleReclaim(workspaceKey, managed);
+        return;
+      }
       log("ZCode agent process idle timeout; reclaiming", {
         workspaceKey,
         pid: managed.child.pid,
@@ -657,6 +704,9 @@ export class ZCodeAgentProcessManager {
         idleTimeoutMs: this.idleTimeoutMs,
       });
       this.processesByWorkspaceKey.delete(workspaceKey);
+      // 先记时刻再广播 unavailable：监听者会在事件回调里立即发起被动观察请求，
+      // 顺序颠倒会让第一个请求漏过冷却窗口。
+      this.lastIdleReclaimAtByWorkspaceKey.set(workspaceKey, Date.now());
       this.reportRuntimeUnavailable(managed);
       void this.cleanupManagedProcessWithRetry(
         managed,
@@ -861,6 +911,7 @@ export class ZCodeAgentProcessManager {
       log("ZCode agent process start already in progress", {
         workspaceKey,
       });
+      traceAgentStartCaller("join-inflight", workspaceKey);
       const client = await starting;
       log("ZCode agent process start wait completed", {
         workspaceKey,
@@ -871,6 +922,7 @@ export class ZCodeAgentProcessManager {
 
     // agent 启动前置后，host warmup 和 UI 首次 readWorkspacePresentation/sendPrompt
     // 可能同时进入 getClient。这里按 workspaceKey 收敛启动中的 promise，避免同一工作区重复 spawn。
+    traceAgentStartCaller("fresh-start", workspaceKey);
     const startGeneration = this.restartGenerationByWorkspaceKey.get(workspaceKey) ?? 0;
     const admissionAbortController = new AbortController();
     let controllers = this.startAdmissionAbortControllersByWorkspaceKey.get(workspaceKey);
@@ -902,6 +954,15 @@ export class ZCodeAgentProcessManager {
   /**
    * 只读取已经登记的 runtime client；被动 observer 使用本入口避免 getClient 的隐式 spawn。
    */
+  /**
+   * 最近一次因空闲回收该 workspace runtime 的时刻；从未被空闲回收过则为 undefined。
+   *
+   * 供服务层判断「刚被回收」的冷却窗口，避免被动观察在回收后立刻把进程重新拉起。
+   */
+  getLastIdleReclaimAt(workspaceKey: string): number | undefined {
+    return this.lastIdleReclaimAtByWorkspaceKey.get(workspaceKey);
+  }
+
   getExistingClient(params: {
     workspacePath: string;
     workspaceIdentity?: string;

@@ -3,6 +3,7 @@ import { test } from "node:test";
 import { BufferWriter, serialize } from "@zcode/rpc";
 import { ServiceCollection } from "@zcode/services";
 import {
+  RELAY_MAX_FRAME_BYTES,
   createRelaySocket,
   encodeRelayFrames,
   type RelayDataPayload,
@@ -177,6 +178,56 @@ test("valid complete inbound RPC frame is acknowledged, duplicates only re-ACK",
   assert.equal(relay.acceptDataPayload(frame), false);
   assert.equal(delivered, 1, "same RPC must not execute twice");
   assert.equal(sent.filter((entry) => entry.payload.zcode_type === "rpc-frame-ack").length, 2);
+});
+
+test("every physical frame stays under the 1MB envelope limit after base64", () => {
+  // 回归：曾经按 1MB 解码字节切片，base64 膨胀 4/3 后物理帧 1.398MB，
+  // 手机端 webSocketDataByteLength 直接判 envelopeTooLarge 并 degrade。
+  const messageBytes = 3 * 1024 * 1024 + 12345;
+  const payload = new Uint8Array(messageBytes);
+  for (let index = 0; index < messageBytes; index += 1) payload[index] = index & 0xff;
+  const frames = encodeRelayFrames(payload, 1, 1, newIdentity);
+  assert.ok(frames.length > 1, "3MB 消息必须被切分");
+  for (const frame of frames) {
+    const envelope = JSON.stringify({ type: "data", payload: frame, client_ts: 1, server_ts: 1 });
+    const bytes = Buffer.byteLength(envelope, "utf8");
+    assert.ok(
+      bytes <= RELAY_MAX_FRAME_BYTES,
+      `物理帧 ${bytes} 字节超过上限 ${RELAY_MAX_FRAME_BYTES}`,
+    );
+  }
+  const assembled = frames
+    .map((frame) => Buffer.from(frame.dataBase64, "base64"))
+    .reduce((total, slice) => total + slice.byteLength, 0);
+  assert.equal(assembled, messageBytes, "分片解码后必须还原原始字节数");
+  assert.deepEqual(
+    frames.map((frame) => frame.fragmentIndex),
+    frames.map((_, index) => index),
+  );
+  assert.equal(frames[0]!.messageBytes, messageBytes);
+  assert.ok(frames.every((frame) => frame.fragmentCount === frames.length));
+});
+
+test("physical seq advances by one per fragment and never repeats", (t) => {
+  const { relay, sent } = socketFixture();
+  t.after(() => relay.socket.dispose());
+  relay.setFrameIdentity(newIdentity);
+  const writer = new BufferWriter();
+  serialize(writer, [new Uint8Array(2 * 1024 * 1024).fill(7)]);
+  relay.socket.write(writer.buffer);
+  const seqs = sent.map((frame) => frame.payload.seq);
+  assert.ok(seqs.length > 1, "大消息必须产生多个物理帧");
+  assert.deepEqual(
+    seqs,
+    seqs.map((_, index) => index + 1),
+    "手机端装配器要求物理 seq 逐帧 +1",
+  );
+  assert.equal(new Set(seqs).size, seqs.length, "seq 不允许重复");
+  assert.deepEqual(
+    new Set(sent.map((frame) => frame.payload.messageSeq)).size,
+    1,
+    "同一条消息的所有分片共用一个 messageSeq",
+  );
 });
 
 test("incomplete, corrupt or stale frames never receive an ACK", (t) => {

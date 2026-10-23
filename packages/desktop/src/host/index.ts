@@ -35,7 +35,11 @@ import { resolveResourceTelemetryEnvironmentKey } from "./hostResourceTelemetryE
 import { reportHostSessionCreate } from "./hostSessionCreateTelemetry.js";
 import { startRelayDeviceBridge, type RelayDeviceBridgeHandle } from "./relayDeviceBootstrap.js";
 import { toRelayAppTask } from "./relayAppProtocol.js";
-import { overlayLiveRelayTaskStatus } from "./relayLiveTaskStatus.js";
+import {
+  applyActiveRelayTaskStatus,
+  collectActiveRelayTaskIds,
+  overlayLiveRelayTaskStatus,
+} from "./relayLiveTaskStatus.js";
 import { createBrowserControlMainBridge } from "./browserControlMainBridge.js";
 import { materializeBrowserRecordingArtifact } from "./browserRecordingArtifactMaterializer.js";
 import {
@@ -3758,6 +3762,15 @@ parentPort.on("message", async (e: Electron.MessageEvent) => {
           transport: hostApiNetworkTransport,
           log: (message, details) => logger.warn(message, details),
           establishOwner: () => {
+            // 排障开关：ZCODE_CHAT_IDLE_TIMEOUT_MS 显式覆盖会话泳道空闲回收阈值。
+            // 设 0 关闭回收（用于定位「进程被回收」类怀疑），不设则用 services 层默认值。
+            const rawChatIdleTimeout = Number(process.env.ZCODE_CHAT_IDLE_TIMEOUT_MS);
+            const chatIdleTimeoutOverride =
+              Number.isFinite(rawChatIdleTimeout) && process.env.ZCODE_CHAT_IDLE_TIMEOUT_MS
+                ? rawChatIdleTimeout > 0
+                  ? rawChatIdleTimeout
+                  : 0
+                : undefined;
             const initializedServices = createLocalServices({
               reportPluginTelemetryEvent: (event) => {
                 parentPort?.postMessage({
@@ -3952,6 +3965,14 @@ parentPort.on("message", async (e: Electron.MessageEvent) => {
                 runtimeSurface: "desktop_local_host",
               },
               serviceAuthorityMode: "desktop-local",
+              // 空闲回收的 Host 侧门禁：prompt RPC 一到就计数，比 task-index 更早看到「有活」。
+              // 没有它，冷启动后第一条 prompt 还没在 syncer 里形成非终态摘要时可能被误判为空闲。
+              ...(chatIdleTimeoutOverride ? { chatIdleTimeoutMs: chatIdleTimeoutOverride } : {}),
+              agentHasActiveWork: ({ workspacePath, workspaceIdentity }) =>
+                workspaceTaskTracker.getRunningTaskCount({
+                  workspacePath,
+                  ...(workspaceIdentity ? { workspaceIdentity } : {}),
+                }) > 0,
               zcodeAgentSpawnFallbackCwd: msg.agentSpawnFallbackCwd,
               zcodeBuiltinProviderConfigFilePath: msg.zcodeBuiltinProviderConfigFilePath,
               processLifecycleReporter: runtimeProcessLifecycleReporter,
@@ -3994,7 +4015,10 @@ parentPort.on("message", async (e: Electron.MessageEvent) => {
         // 工作区名单取 main 传下来的 agentWarmupTargets（按最近使用排序，最多 3 个）；
         // 它比 msg.workspacePath 可靠 —— 后者可能只是默认的 home 目录，手机端拿到会打不开。
         const homeDir = homedir();
-        const relayWorkspaces = (
+        // home 根和 / 不是项目目录：手机端拿到只会「打开工作区」失败，直接不报。
+        const isRelayWorkspacePath = (workspacePath: string): boolean =>
+          workspacePath !== "/" && workspacePath !== homeDir;
+        const startupRelayWorkspaces = (
           msg.agentWarmupTargets && msg.agentWarmupTargets.length > 0
             ? msg.agentWarmupTargets.map((target) => ({
                 workspacePath: target.workspacePath,
@@ -4010,10 +4034,41 @@ parentPort.on("message", async (e: Electron.MessageEvent) => {
                   },
                 ]
               : []
-        ).filter(
-          // home 根和 / 不是项目目录：手机端拿到只会「打开工作区」失败，直接不报。
-          (item) => item.workspacePath !== "/" && item.workspacePath !== homeDir,
-        );
+        ).filter((item) => isRelayWorkspacePath(item.workspacePath));
+        // 兜底：main 只预热 active workspace（STARTUP_AGENT_WARMUP_LIMIT = 1），
+        // 用户上次停在 home 目录时上面会被过滤成空数组 —— 中继随即静默不启动，
+        // UI 只剩「远程控制未开启」一行字，没有任何线索。这里回落到 Setting 里
+        // 的真实项目名单（已打开的会话 + 最近项目），让中继始终有可用的工作区。
+        const resolveFallbackRelayWorkspaces = async (): Promise<
+          Array<{ workspacePath: string; workspaceIdentity?: string }>
+        > => {
+          try {
+            const settings = await settingService.get();
+            const seen = new Set<string>();
+            const list: Array<{ workspacePath: string; workspaceIdentity?: string }> = [];
+            const push = (workspacePath: string): void => {
+              if (!isRelayWorkspacePath(workspacePath) || seen.has(workspacePath)) return;
+              seen.add(workspacePath);
+              list.push({ workspacePath });
+            };
+            for (const entry of settings.lastWorkspaceSession ?? []) {
+              if (entry.kind === "local") push(entry.workspacePath);
+            }
+            for (const workspacePath of settings.recentProjects ?? []) {
+              if (typeof workspacePath === "string") push(workspacePath);
+            }
+            return list;
+          } catch (error) {
+            logger.warn("relay workspace fallback failed", {
+              message: error instanceof Error ? error.message : String(error),
+            });
+            return [];
+          }
+        };
+        const relayWorkspaces =
+          startupRelayWorkspaces.length > 0
+            ? startupRelayWorkspaces
+            : await resolveFallbackRelayWorkspaces();
         if (
           process.env.ZCODE_SELFHOST_RELAY_DISABLED !== "1" &&
           msg.deviceMid &&
@@ -4060,17 +4115,45 @@ parentPort.on("message", async (e: Electron.MessageEvent) => {
                   ...(settings.recentProjects ?? []).map((workspacePath) => ({ workspacePath })),
                 ];
                 if (scopes.length === 0) return [];
-                const result = await taskService.listTaskList({
-                  kind: "active",
-                  workspaceScopes: scopes,
-                  sortBy: "updated",
-                  limit: 100,
-                });
+                // Bug 原因：tasks-index 行的 status 只镜像 CLI 的 last_outcome，永远是终态，
+                // 手机端把 displayStatus !== "running" 一律显示成「空闲」或「已完成」。
+                // 运行中事实只能取 syncer 的活动集合，再并上 Host 内存 tracker
+                // （纯 v4 命令路径不经过 zcodeSessionService，syncer 可能没有订阅）。
+                const activeScopes = [
+                  ...new Map(scopes.map((scope) => [resolveWorkspaceKey(scope), scope])).values(),
+                ];
+                const [result, activeIdBatches] = await Promise.all([
+                  taskService.listTaskList({
+                    kind: "active",
+                    workspaceScopes: scopes,
+                    sortBy: "updated",
+                    limit: 100,
+                  }),
+                  Promise.all(
+                    activeScopes.map(async (scope) => {
+                      try {
+                        return { scope, taskIds: await taskService.listActiveTaskIds(scope) };
+                      } catch (error) {
+                        logger.warn("relay task active ids unavailable", {
+                          workspacePath: scope.workspacePath,
+                          message: error instanceof Error ? error.message : String(error),
+                        });
+                        return { scope, taskIds: [] as string[] };
+                      }
+                    }),
+                  ),
+                ]);
+                const activeTaskIdsByKey = collectActiveRelayTaskIds([
+                  ...activeIdBatches.flatMap(({ scope, taskIds }) =>
+                    taskIds.map((taskId) => ({ taskId, ...scope })),
+                  ),
+                  ...workspaceTaskTracker.getRunningTaskIds(),
+                ]);
                 const agentService = services.getOptional(IZCodeAgentService);
-                const items = agentService
+                const overlayed = agentService
                   ? await overlayLiveRelayTaskStatus(result.items, (request) => agentService.listSessions(request))
                   : result.items;
-                return items.map(toRelayAppTask);
+                return applyActiveRelayTaskStatus(overlayed, activeTaskIdsByKey).map(toRelayAppTask);
               },
               ...(msg.workspacePath &&
               relayWorkspaces.some((item) => item.workspacePath === msg.workspacePath)
@@ -4089,6 +4172,15 @@ parentPort.on("message", async (e: Electron.MessageEvent) => {
             | WebRemoteControlService
             | undefined;
           webRemoteControl?.attachBridge(relayDeviceBridge);
+        } else {
+          // 三个门槛任一不过都不启动中继，UI 只会显示「远程控制未开启」。
+          // 这里把具体是哪一条没过写进日志，避免下次再靠翻源码猜。
+          logger.info("relay bridge skipped", {
+            disabledByEnv: process.env.ZCODE_SELFHOST_RELAY_DISABLED === "1",
+            hasDeviceMid: Boolean(msg.deviceMid),
+            workspaceCount: relayWorkspaces.length,
+            startupWorkspaceCount: startupRelayWorkspaces.length,
+          });
         }
         const zcodeTaskService = services.getOptional(IZCodeTaskService);
         if (zcodeTaskService) {

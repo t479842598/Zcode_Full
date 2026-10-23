@@ -3133,20 +3133,26 @@ export function SessionPane({
   const prewarmBindingRef = useRef(prewarmBinding);
   prewarmBindingRef.current = prewarmBinding;
   const prewarmSessionId = prewarmBinding?.sessionId ?? null;
-  // runtime 换代（CUA Helper 就绪、liveness 恢复等触发 workspace-dispose）会冲掉草稿态尚未
-  // 持久化的预热会话。重建期间禁止发送，否则附件会挂在已消失的会话上（sessionNotFound）。
-  const { rebuilding: draftRuntimeRebuilding } = useDraftRuntimeRebuildGate({
-    enabled: sessionId === null,
-    onRuntimeRestart,
-    onRuntimeLifecycle,
-    prewarmSessionId,
-    workspaceIdentity,
-    workspacePath,
-  });
+  // runtime 换代（CUA Helper 就绪、liveness 恢复、会话泳道空闲回收）会冲掉草稿态尚未持久化的
+  // 预热会话。这里只记录事实并禁发送：作废这一代 binding、把会话 id 从绑定目标里摘掉，
+  // 但不触发重建——重建交给发送路径 waitForDraftSession() 懒发起。若在这里递增
+  // draftRuntimeInvalidationVersion，回收当场就会 createSession，写路径重启 agent，
+  // 于是「idle 回收 → 重建 → 再回收」无限自激（见 docs/ui/draft-prewarm-runtime-reclaim.md）。
+  const { rebuilding: draftRuntimeRebuilding, stale: draftRuntimeStale } =
+    useDraftRuntimeRebuildGate({
+      enabled: sessionId === null,
+      onRuntimeRestart,
+      onRuntimeLifecycle,
+      onRuntimeUnavailable: () => prewarmBindingRef.current?.discard(),
+      prewarmSessionId,
+    });
   const ensureDraftPrewarmConfigBeforeSendRef = useRef<(targetSessionId: string) => Promise<void>>(
     async () => undefined,
   );
-  const effectiveSessionId = sessionId ?? recoveringDraft?.sessionId ?? prewarmSessionId;
+  // 已 stale 的预热会话不会再回来（旧 runtime 已死）：不能把它当 effective 绑定目标，
+  // 否则附件上传与订阅会直撞 sessionNotFound。新 binding 到达时 stale 由 gate 自行解除。
+  const effectivePrewarmSessionId = draftRuntimeStale ? null : prewarmSessionId;
+  const effectiveSessionId = sessionId ?? recoveringDraft?.sessionId ?? effectivePrewarmSessionId;
   useEffect(() => {
     if (!recoveringDraft?.commandId || !remoteAvailable) return;
     let current = true;
@@ -4376,7 +4382,8 @@ export function SessionPane({
 
   const followupModeSyncKeyRef = useRef<string | null>(null);
   useEffect(() => {
-    const targetSessionId = sessionId ?? prewarmSessionId;
+    // stale 的预热会话已随旧 runtime 消失，不能再作为配置同步目标。
+    const targetSessionId = sessionId ?? effectivePrewarmSessionId;
     if (!targetSessionId || !appFollowupMode || snapshotRevision === null) return;
     if (snapshotSessionId !== targetSessionId) return;
     if (snapshotFollowupMode === appFollowupMode) {
@@ -4396,7 +4403,7 @@ export function SessionPane({
     appFollowupMode,
     configCommandBarrier,
     dispatchConfigCas,
-    prewarmSessionId,
+    effectivePrewarmSessionId,
     sessionId,
     snapshotFollowupMode,
     snapshotRevision,

@@ -3135,6 +3135,45 @@ const enUS: Record<string, string> = {
   "settings.uiFontSize": "UI font size",
   "settings.uiFontSizeDescription":
     "Adjust interface text without changing icons or layout dimensions.",
+  "settings.appearance.customTitle": "Custom appearance",
+  "settings.appearance.customDescription":
+    "Layer an accent scheme and a background image on top of the theme. Choices apply per window and stay in sync across windows.",
+  "settings.appearance.customPreset": "Color scheme",
+  "settings.appearance.customPresetDescription":
+    "Presets only shift the accent and selection hue, leaving primary buttons and body text untouched so contrast holds.",
+  "settings.appearance.customPreset.default": "Follow theme",
+  "settings.appearance.customPreset.aurora": "Aurora",
+  "settings.appearance.customPreset.ocean": "Ocean",
+  "settings.appearance.customPreset.sand": "Sand",
+  "settings.appearance.customPreset.rose": "Rose",
+  "settings.appearance.customPreset.forest": "Forest",
+  "settings.appearance.customAccent": "Accent color",
+  "settings.appearance.customAccentDescription":
+    "Overrides the scheme accent used by links, focus rings, and selected states.",
+  "settings.appearance.customAccentFollow": "Follow preset",
+  "settings.appearance.customWallpaper": "Background image",
+  "settings.appearance.customWallpaperDescription":
+    "Local files and http(s)/data image URLs are supported. Surfaces turn translucent so the image shows through.",
+  "settings.appearance.customWallpaperPick": "Choose image",
+  "settings.appearance.customWallpaperClear": "Remove",
+  "settings.appearance.customWallpaperUrl": "Background image URL",
+  "settings.appearance.customWallpaperUrlPlaceholder": "Paste an https:// image URL and press Enter",
+  "settings.appearance.customWallpaperUnavailable":
+    "This environment cannot pick local files; use an image URL instead.",
+  "settings.appearance.customWallpaperRejected":
+    "That address cannot be used as a background; pick a local image or an http(s)/data image URL.",
+  "settings.appearance.customFit": "Fill mode",
+  "settings.appearance.customFit.cover": "Cover",
+  "settings.appearance.customFit.contain": "Contain",
+  "settings.appearance.customFit.tile": "Tile",
+  "settings.appearance.customDim": "Scrim strength",
+  "settings.appearance.customDimDescription": "Darkens the image; higher values keep text readable.",
+  "settings.appearance.customBlur": "Blur radius",
+  "settings.appearance.customSurfaceOpacity": "Surface opacity",
+  "settings.appearance.customSurfaceOpacityDescription":
+    "Lower values reveal more of the image but reduce body-text contrast; pair anything below 60% with a stronger scrim.",
+  "settings.appearance.customReset": "Reset appearance",
+  "settings.appearance.customResetAction": "Reset",
   "settings.systemTitle": "General",
   "settings.systemDescription": "These preferences affect the current window experience.",
   "settings.locale": "Language",

@@ -2277,3 +2277,134 @@ html[data-document-hidden] *::after {
   [data-sidebar-divider-extension] {
   display: none;
 }
+
+/* ===========================================================================
+ * 自定义外观 —— 配色预设、强调色与背景图（设置 → 外观 → 自定义外观）
+ *
+ * 为什么走伪元素而不是给 #root 或 body 设背景：styles.css 顶部为了 Electron vibrancy
+ * 把 html/body/#root 的 background 固定成 transparent !important；壁纸只能画在 #root
+ * 内部的独立层上。RootShell 的根 div 是唯一的全屏容器，伪元素挂在那里即可覆盖所有界面。
+ *
+ * 为什么用变量而不是逐处改类名：bg-background 在代码里有 226 处，逐处改会把主题
+ * 约束扩散到每个组件；这里只在壁纸开启时把六个表面 Token 换成半透明版本。
+ * ======================================================================== */
+
+/* isolation 让根容器成为独立层叠上下文，壁纸伪元素用 z-index:-1 就能稳定垫在
+ * 所有界面内容之下；否则 absolute + z-index:0 会盖住非定位子元素（壁纸挡住界面）。 */
+.zcode-appearance-surface {
+  isolation: isolate;
+}
+
+.zcode-appearance-surface::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-image:
+    linear-gradient(
+      rgba(0, 0, 0, var(--zcode-wallpaper-dim, 0)),
+      rgba(0, 0, 0, var(--zcode-wallpaper-dim, 0))
+    ),
+    var(--zcode-wallpaper-image, none);
+  background-position: center;
+  background-size: auto, var(--zcode-wallpaper-size, cover);
+  background-repeat: no-repeat, var(--zcode-wallpaper-repeat, no-repeat);
+}
+
+/* 模糊半径会把边缘向内收，用负 inset 把画布撑出去，避免四边出现透明缝。 */
+.zcode-appearance-surface::before {
+  inset: calc(-1 * var(--zcode-wallpaper-blur, 0px));
+  filter: blur(var(--zcode-wallpaper-blur, 0px));
+}
+
+html:not([data-zcode-wallpaper="on"]) .zcode-appearance-surface::before {
+  display: none;
+}
+
+/* 预设色相派生：单变量 + oklch，六套预设共用一段声明，不写 6 组色值。 */
+html[data-zcode-appearance-preset]:not([data-zcode-appearance-preset="default"]) {
+  --color-brand: oklch(0.72 0.15 var(--zcode-preset-hue));
+  --color-resize-handle: oklch(0.72 0.15 var(--zcode-preset-hue));
+  --color-accent: color-mix(in oklab, oklch(0.62 0.14 var(--zcode-preset-hue)) 26%, transparent);
+}
+
+/* 壁纸开启时把结构性表面换成半透明，让图片透出来又不牺牲文字对比度。 */
+html[data-zcode-wallpaper="on"] {
+  --color-background: color-mix(
+    in oklab,
+    var(--zcode-wallpaper-base-background) calc(var(--zcode-surface-alpha, 0.86) * 100%),
+    transparent
+  );
+  --color-header: color-mix(
+    in oklab,
+    var(--zcode-wallpaper-base-header) calc(var(--zcode-surface-alpha, 0.86) * 100%),
+    transparent
+  );
+  --color-panel: color-mix(
+    in oklab,
+    var(--zcode-wallpaper-base-panel) calc(var(--zcode-surface-alpha, 0.86) * 100%),
+    transparent
+  );
+  --color-sidebar: color-mix(
+    in oklab,
+    var(--zcode-wallpaper-base-sidebar) calc(var(--zcode-surface-alpha, 0.86) * 100%),
+    transparent
+  );
+  --color-card: color-mix(
+    in oklab,
+    var(--zcode-wallpaper-base-card) calc(var(--zcode-surface-alpha, 0.86) * 100%),
+    transparent
+  );
+  --color-popover: color-mix(
+    in oklab,
+    var(--zcode-wallpaper-base-popover) calc(var(--zcode-surface-alpha, 0.86) * 100%),
+    transparent
+  );
+  --color-input: color-mix(
+    in oklab,
+    var(--zcode-wallpaper-base-input) calc(var(--zcode-surface-alpha, 0.86) * 100%),
+    transparent
+  );
+}
+
+/* 壁纸底色基准：与各主题原有表面色一一对应，避免出现第二份"新配色"。 */
+html[data-zcode-wallpaper="on"] {
+  --zcode-wallpaper-base-background: var(--color-neutral-50);
+  --zcode-wallpaper-base-header: var(--color-neutral-100);
+  --zcode-wallpaper-base-panel: var(--color-neutral-100);
+  --zcode-wallpaper-base-sidebar: var(--color-neutral-100);
+  --zcode-wallpaper-base-card: var(--color-white);
+  --zcode-wallpaper-base-popover: var(--color-white);
+  --zcode-wallpaper-base-input: var(--color-white);
+}
+
+html[data-zcode-wallpaper="on"].dark {
+  --zcode-wallpaper-base-background: var(--color-neutral-900);
+  --zcode-wallpaper-base-header: var(--color-neutral-900);
+  --zcode-wallpaper-base-panel: var(--color-neutral-900);
+  --zcode-wallpaper-base-sidebar: var(--color-neutral-950);
+  --zcode-wallpaper-base-card: var(--color-neutral-800);
+  --zcode-wallpaper-base-popover: var(--color-neutral-800);
+  --zcode-wallpaper-base-input: var(--color-neutral-800);
+}
+
+html[data-zcode-wallpaper="on"].theme-zai-light {
+  --zcode-wallpaper-base-background: #f8f8f8;
+  --zcode-wallpaper-base-header: #ffffff;
+  --zcode-wallpaper-base-panel: #ffffff;
+  --zcode-wallpaper-base-sidebar: #f0f0f0;
+  --zcode-wallpaper-base-card: #ffffff;
+  --zcode-wallpaper-base-popover: #ffffff;
+  --zcode-wallpaper-base-input: #ffffff;
+}
+
+html[data-zcode-wallpaper="on"].theme-zai-dark {
+  --zcode-wallpaper-base-background: #161616;
+  --zcode-wallpaper-base-header: #202020;
+  --zcode-wallpaper-base-panel: #202020;
+  --zcode-wallpaper-base-sidebar: #161616;
+  --zcode-wallpaper-base-card: #2b2b2b;
+  --zcode-wallpaper-base-popover: #2b2b2b;
+  --zcode-wallpaper-base-input: #2b2b2b;
+}

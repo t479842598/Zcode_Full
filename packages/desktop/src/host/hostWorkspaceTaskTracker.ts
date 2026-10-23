@@ -16,6 +16,12 @@ export function createHostWorkspaceTaskTracker(
   finish: (taskId: string, context: HostWorkspaceTaskContext) => void;
   getRunningTaskCount: (context: HostWorkspaceTaskContext) => number;
   getTotalRunningTaskCount: () => number;
+  /** 当前正在运行的 task id 快照；手机端任务列表要靠它补「运行中」。 */
+  getRunningTaskIds: () => ReadonlyArray<{
+    taskId: string;
+    workspacePath: string;
+    workspaceIdentity?: string;
+  }>;
   clearWorkspace: (context: HostWorkspaceTaskContext) => void;
 } {
   const entries = new Map<
@@ -38,6 +44,26 @@ export function createHostWorkspaceTaskTracker(
 
     getTotalRunningTaskCount() {
       return totalRunningTaskCount;
+    },
+
+    getRunningTaskIds() {
+      const running: Array<{
+        taskId: string;
+        workspacePath: string;
+        workspaceIdentity?: string;
+      }> = [];
+      for (const entry of entries.values()) {
+        for (const taskId of entry.activeTaskIds) {
+          running.push({
+            taskId,
+            workspacePath: entry.context.workspacePath,
+            ...(entry.context.workspaceIdentity
+              ? { workspaceIdentity: entry.context.workspaceIdentity }
+              : {}),
+          });
+        }
+      }
+      return running;
     },
 
     begin(taskId, context) {

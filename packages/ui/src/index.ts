@@ -99,6 +99,39 @@ export {
   loadUiFontSizePx,
   subscribeToUiFontSizeStorageChanges,
 } from "./lib/uiFontSize.js";
+export {
+  APPEARANCE_ACCENT_STORAGE_KEY,
+  APPEARANCE_PRESET_ATTRIBUTE,
+  APPEARANCE_PRESET_STORAGE_KEY,
+  APPEARANCE_PRESETS,
+  APPEARANCE_WALLPAPER_STORAGE_KEY,
+  DEFAULT_APPEARANCE,
+  DEFAULT_WALLPAPER,
+  MAX_SURFACE_OPACITY,
+  MAX_WALLPAPER_BLUR,
+  MAX_WALLPAPER_DIM,
+  MIN_SURFACE_OPACITY,
+  MIN_WALLPAPER_BLUR,
+  MIN_WALLPAPER_DIM,
+  WALLPAPER_ATTRIBUTE,
+  WALLPAPER_FITS,
+  applyAppearanceCustomization,
+  isSupportedWallpaperSource,
+  loadAppearanceCustomization,
+  normalizeAccentColor,
+  normalizeAppearancePreset,
+  normalizeWallpaperFit,
+  normalizeWallpaperPreference,
+  saveAppearanceCustomization,
+  subscribeToAppearanceStorageChanges,
+  toWallpaperCssUrl,
+} from "./lib/appearanceCustomization.js";
+export type {
+  AppearanceCustomization,
+  AppearancePreset,
+  WallpaperFit,
+  WallpaperPreference,
+} from "./lib/appearanceCustomization.js";
 export { reportUiLaunchToInput } from "./lib/uiPerfArmsTelemetry.js";
 export {
   RendererUserActionTelemetry,

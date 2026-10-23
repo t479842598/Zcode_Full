@@ -9,8 +9,15 @@
  * 中继只做原样转发，分片/重组/校验都在客户端完成。
  */
 import { Emitter, VSBuffer, type ISocket } from "@zcode/rpc";
+import { encodeWebRemoteControlRpcTransportMessage } from "@zcode/shared";
 
-/** 单个物理帧上限（协议规定 1MB） */
+/**
+ * 单个物理帧上限（协议规定 1MB，指 base64 之后的整条 JSON 信封）。
+ *
+ * 注意：这是**物理帧**预算，不是解码字节预算。base64 会膨胀 4/3，
+ * 按 1MB 解码字节切片会得到 1.398MB 的物理帧，对端 `webSocketDataByteLength`
+ * 直接判 envelopeTooLarge → markDegraded → 每几秒重连一次。
+ */
 export const RELAY_MAX_FRAME_BYTES = 1024 * 1024;
 /** 单条逻辑消息上限（协议规定 16MB） */
 export const RELAY_MAX_MESSAGE_BYTES = 16 * 1024 * 1024;
@@ -91,40 +98,42 @@ export function isAssemblableRelayPayload(payload: { zcode_type?: unknown }): bo
   return payload.zcode_type === "rpc-frame";
 }
 
-/** 把一段字节切成中继 data 帧；超过 16MB 直接拒绝（协议上限） */
+/**
+ * 把一段字节切成中继 data 帧；超过 16MB 直接拒绝（协议上限）。
+ *
+ * `seq` 是**首个物理帧**的序号，后续分片依次 +1 —— 手机端装配器按
+ * `expectedPhysicalSeq` 逐帧连续性校验（`web-remote-control-rpc-transport.ts`
+ * 里 seq 大于期望即 physicalGap），所有分片共用一个 seq 会被判成
+ * conflictingDuplicate 并整条 degrade。
+ *
+ * 切片预算由共享编码器按「整条 JSON 信封 UTF-8 字节数 <= 1MB」二分求出，
+ * 保证 base64 膨胀后仍不超物理帧上限。
+ */
 export function encodeRelayFrames(
   bytes: Uint8Array,
   seq: number,
   messageSeq: number,
   identity?: RelayFrameIdentity,
 ): RelayDataPayload[] {
+  if (!identity) {
+    // 没有 bridge identity 时对端会整帧丢弃，发出去纯属浪费带宽。
+    throw new Error("relay frames require bridge identity");
+  }
   if (bytes.byteLength > RELAY_MAX_MESSAGE_BYTES) {
     throw new Error(`relay message too large: ${bytes.byteLength}`);
   }
-  const fragmentCount = Math.max(1, Math.ceil(bytes.byteLength / RELAY_MAX_FRAME_BYTES));
-  if (fragmentCount > RELAY_MAX_FRAGMENTS) {
-    throw new Error(`relay fragment count ${fragmentCount} exceeds ${RELAY_MAX_FRAGMENTS}`);
-  }
-  const checksum = { algorithm: "crc32" as const, value: crc32Hex(bytes) };
-  const frames: RelayDataPayload[] = [];
-  for (let index = 0; index < fragmentCount; index += 1) {
-    const slice = bytes.subarray(
-      index * RELAY_MAX_FRAME_BYTES,
-      Math.min((index + 1) * RELAY_MAX_FRAME_BYTES, bytes.byteLength),
-    );
-    frames.push({
-      zcode_type: "rpc-frame",
-      ...(identity ?? {}),
-      seq,
-      messageSeq,
-      fragmentIndex: index,
-      fragmentCount,
-      messageBytes: bytes.byteLength,
-      checksum,
-      dataBase64: Buffer.from(slice).toString("base64"),
-    });
-  }
-  return frames;
+  return encodeWebRemoteControlRpcTransportMessage(bytes, {
+    bridgeSessionId: identity.bridgeSessionId,
+    ...(identity.bridgeGeneration === undefined
+      ? {}
+      : { bridgeGeneration: identity.bridgeGeneration }),
+    ...(identity.recoveryId === undefined ? {} : { recoveryId: identity.recoveryId }),
+    firstPhysicalSeq: seq,
+    messageSeq,
+    maxPhysicalFrameBytes: RELAY_MAX_FRAME_BYTES,
+    maxMessageBytes: RELAY_MAX_MESSAGE_BYTES,
+    maxFragments: RELAY_MAX_FRAGMENTS,
+  }).map((frame) => ({ ...frame, checksum: { ...frame.checksum } }));
 }
 
 interface PendingMessage {
@@ -255,14 +264,13 @@ export function createRelaySocket(
       onEnd: onEnd.event,
       write(buffer: VSBuffer) {
         if (closed || !frameIdentity) return;
-        for (const payload of encodeRelayFrames(
-          buffer.buffer,
-          (seq += 1),
-          (messageSeq += 1),
-          frameIdentity,
-        )) {
+        // 物理 seq 逐帧递增：encodeRelayFrames 收到的是本消息首片序号，
+        // 内部按 fragmentIndex 依次 +1，所以这里要按实际帧数推进 seq。
+        const frames = encodeRelayFrames(buffer.buffer, seq + 1, (messageSeq += 1), frameIdentity);
+        for (const payload of frames) {
           transport.send({ type: "data", payload, client_ts: Date.now() });
         }
+        seq += frames.length;
       },
       end() {
         if (closed) return;

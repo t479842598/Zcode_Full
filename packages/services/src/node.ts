@@ -22,7 +22,7 @@ import { getZCodeDataRootDir as projectDataRoot } from "#src/paths.js";
 import { createTaskGroupService, ITaskGroupService, groupTaskKey } from "#src/task-groups/index.js";
 import { IGenUiService } from "./gen-ui/contract.js";
 import { createGenUiService } from "./gen-ui/node.js";
-import { channelReplyHostRequestSchema, channelReplyResultSchema } from "@zcode/shared";
+import { channelReplyHostRequestSchema, channelReplyResultSchema, resolveWorkspaceKey } from "@zcode/shared";
 /* eslint-disable max-lines -- host process 服务注册和启动装配需要集中维护，拆散后会更难追踪依赖注入顺序 */
 // Node.js service implementations — NOT safe to import in browser code
 import { randomBytes } from "node:crypto";
@@ -1238,6 +1238,21 @@ export function createLocalServices(options: {
   runtimeProcessEnvPatch?: Record<string, string>;
   /** 本地桌面上次 workspace 缺失时，仅用于 Agent 子进程 spawn.cwd 兜底。 */
   zcodeAgentSpawnFallbackCwd?: string;
+  /**
+   * 会话泳道空闲回收阈值（毫秒）。缺省 5 分钟：无在飞请求且没有在跑的任务就回收整棵
+   * runtime。显式传 0 或负数可关闭，用于排查「进程被意外回收」类问题。
+   */
+  chatIdleTimeoutMs?: number;
+  /**
+   * 会话泳道空闲回收的第二道门禁：由调用方（Desktop Host）注入，回答「这个 workspace
+   * 现在是否还有正在跑的会话」。与 task-index 活动集合取并集——syncer 只观察已建立的
+   * 订阅，Host tracker 从 prompt RPC 开始计数，两者覆盖不同来路。
+   */
+  agentHasActiveWork?: (context: {
+    workspacePath: string;
+    workspaceIdentity?: string;
+    workspaceKey: string;
+  }) => boolean;
   /** desktop-attached remote server 从 Desktop Host 收到的一次性 Agent 网络配置。 */
   remoteAgentNetwork?: {
     httpProxy?: string;
@@ -1718,6 +1733,11 @@ export function createLocalServices(options: {
   // 先用前向引用连接 agent service 的 CUA turn tracker，避免在活跃 CUA 请求中途重启 Helper；
   // service 创建完成后再赋值。Helper recovery 始终不能回收 Agent。
   let hasActiveTurnRef: (() => boolean) | undefined;
+  // 同款前向引用：会话泳道的空闲回收门禁要查 task-index 活动集合，而 syncer 在
+  // zcodeAgentService 之后才创建。真正被调用发生在空闲计时器到点（数分钟后），那时早已赋值。
+  let hasActiveWorkRef:
+    | ((context: { workspacePath: string; workspaceIdentity?: string; workspaceKey: string }) => boolean)
+    | undefined;
   const isCuaEnabledForContext = (context?: CuaProductMcpServerResolverContext): boolean =>
     // 保留 main 原有 gate 行为（避免回归）：dev/internal 特性开启时（ZCODE_CUA_DEV_MODE=1 或
     // ZCODE_CUA_PRODUCT_HELPER=1）即视为启用，不依赖 config.json 显式 enable——main 的 bootstrap
@@ -2218,6 +2238,13 @@ export function createLocalServices(options: {
     workspaceIdentity: undefined,
   });
   const zcodeAgentService = createZCodeAgentService({
+    // 会话泳道空闲回收：默认 5 分钟无请求且在跑任务为空时回收整棵 runtime + 其 MCP 子进程。
+    hasActiveWork: (context) =>
+      (hasActiveWorkRef?.(context) ?? false) || (options?.agentHasActiveWork?.(context) ?? false),
+    // 0 是合法的「关闭回收」，不能用真值判断吞掉。
+    ...(options?.chatIdleTimeoutMs !== undefined
+      ? { chatIdleTimeoutMs: options.chatIdleTimeoutMs }
+      : {}),
     prepareProjectExecution,
     prepareSessionCreation: async (target) =>
       (await taskIndexRepo.getProjectRepository()).reserveCreatedTask({
@@ -2447,6 +2474,10 @@ export function createLocalServices(options: {
     agentService: zcodeAgentService,
     taskIndexRepo,
   });
+  // 空闲回收的活体门禁：syncer 观察到的非终态会话（draft/running/…）就是「还有活」。
+  // 只读快照，不会为判定而创建 runtime。
+  hasActiveWorkRef = ({ workspaceKey }) =>
+    zcodeTaskIndexSyncer.activeTaskRefs().some((ref) => resolveWorkspaceKey(ref) === workspaceKey);
   // 自动归档只由这里的定时扫描触发（启动首轮 + 每小时 + 设置变更补扫）；readTree 与任务点击
   // 都不再执行 archiveInactive。判据仍排除 syncer 观察到的非终态会话，不为扫描启动 CLI。
   const taskAutoArchiveScheduler = createTaskAutoArchiveScheduler({

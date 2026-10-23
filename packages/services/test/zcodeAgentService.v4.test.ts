@@ -427,6 +427,7 @@ describe("zcodeAgentService v4 conversation channel", () => {
       topicResourceExecutor?: NonNullable<
         Parameters<typeof createZCodeAgentService>[0]
       >["topicResourceExecutor"];
+      chatIdleTimeoutMs?: number;
     } = {},
   ) {
     const workspacePath = mkdtempSync(join(tmpdir(), "zcode-agent-v4-"));
@@ -449,6 +450,9 @@ describe("zcodeAgentService v4 conversation channel", () => {
       repoSnapshotSidecar: options.repoSnapshotSidecar,
       topicResourceExecutor: options.topicResourceExecutor,
       channelReplyExecutor: options.channelReplyExecutor,
+      ...(options.chatIdleTimeoutMs !== undefined
+        ? { chatIdleTimeoutMs: options.chatIdleTimeoutMs }
+        : {}),
       authorizeLocalMediaPreviewPath: options.authorizeLocalMediaPreviewPath,
       modelSelectionReadinessSource: {
         async getView() {
@@ -1021,6 +1025,63 @@ describe("zcodeAgentService v4 conversation channel", () => {
       ]);
     } finally {
       disposable?.dispose();
+      await service.disposeAllAndWait();
+    }
+  });
+
+  it("idle 回收后的冷却窗口内，被动查询不再把 runtime 拉回来", async () => {
+    const { service, workspacePath, commandResolver } = setupService({ chatIdleTimeoutMs: 80 });
+    const scope = createZCodeAgentConnectionScope(service, {
+      connectionId: "cooldown-query",
+      clientMode: "web-remote-replayable",
+    });
+    const lifecycle: string[] = [];
+    const disposable = service.onAgentRuntimeLifecycle?.((event) => {
+      lifecycle.push(event.state);
+    });
+    try {
+      await scope.service.helloConversationV4();
+      await scope.service.initializeConversationV4({
+        kind: "clientHello",
+        protocolVersion: 3,
+        clientId: "cooldown-query",
+        appVersion: "4.0.0",
+      });
+      await scope.service.subscribeConversationV4({
+        workspacePath,
+        sessionId: "cooldown-session",
+      });
+      expect(commandResolver).toHaveBeenCalledTimes(1);
+      // 订阅结清后没有在飞请求，空闲计时开始；到点即回收整棵 runtime。
+      await vi.waitFor(() => expect(lifecycle).toContain("unavailable"), { timeout: 5_000 });
+
+      // 冷却窗口内的被动查询必须直接报「runtime 不在跑」：这条请求原本会把 runtime
+      // 拉回来，然后下一轮空闲又回收，形成 reclaim → respawn 自激。
+      await expect(
+        scope.service.queryConversationCommandsV4({
+          workspacePath,
+          commands: [{ sessionId: null, commandId: "cooldown-probe" }],
+        }),
+      ).rejects.toMatchObject({ code: "ZCODE_AGENT_RUNTIME_UNAVAILABLE" });
+      expect(commandResolver).toHaveBeenCalledTimes(1);
+
+      // 用户显式发送属于写路径，不受冷却限制，必须仍能立刻把 runtime 拉起来。
+      const ack = await scope.service.sendConversationCommandV4({
+        workspacePath,
+        envelope: {
+          commandId: "cooldown-send",
+          clientId: "cooldown-query",
+          sessionId: "cooldown-session",
+          type: "sendText",
+          payload: { text: "wake up" },
+          issuedAt: 1,
+        },
+      });
+      expect(ack).toMatchObject({ status: "accepted" });
+      expect(commandResolver).toHaveBeenCalledTimes(2);
+    } finally {
+      disposable?.dispose();
+      scope.dispose();
       await service.disposeAllAndWait();
     }
   });

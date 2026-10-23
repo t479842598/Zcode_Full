@@ -81,3 +81,6 @@ __pycache__/
 # 根锚定：只忽略仓库根目录，不误伤 packages/*/index.js。
 /index.js
 /chunk-*.js
+
+# 打包暂存目录的 macOS 索引标记，不是源码
+packages/desktop/build/.metadata_never_index

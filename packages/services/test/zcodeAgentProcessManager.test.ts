@@ -1094,6 +1094,81 @@ require("node:readline").createInterface({ input: process.stdin }).on("line", li
     }
   });
 
+  it("有任务在跑时不回收，任务结束后才回收", async () => {
+    const workspacePath = mkdtempSync(join(tmpdir(), "zcode-agent-active-work-"));
+    createdDirs.push(workspacePath);
+    // 长跑 turn 里流式通知不进 pending 队列，pendingOperationRequestCount 可以是 0；
+    // hasActiveWork 就是补这个洞的门禁，返回 true 时必须重新计时而不是回收。
+    let busy = true;
+    const manager = new ZCodeAgentProcessManager({
+      idleTimeoutMs: 50,
+      hasActiveWork: () => busy,
+      commandResolver: () => ({
+        command: process.execPath,
+        cwd: workspacePath,
+        args: [
+          "-e",
+          `
+        require("node:readline").createInterface({ input: process.stdin }).on("line", line => {
+          const request = JSON.parse(line);
+          process.stdout.write(JSON.stringify({ id: request.id, result: {} }) + "\\n");
+        });
+      `,
+        ],
+      }),
+    });
+    try {
+      const client = await manager.getClient({ workspacePath });
+      await client.request("workspace/readState", {});
+      const pid = manager.listManagedProcesses()[0]!.pid;
+      // 六个空闲周期都该被门禁挡下。
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      expect(client.isDisposed).toBe(false);
+      expect(manager.listManagedProcesses()[0]!.pid).toBe(pid);
+      busy = false;
+      await vi.waitFor(() => expect(client.isDisposed).toBe(true), { timeout: 3_000 });
+    } finally {
+      await manager.disposeAllAndWait();
+    }
+  });
+
+  it("空闲回收后记录回收时刻，供上层判定冷却窗口", async () => {
+    const workspacePath = mkdtempSync(join(tmpdir(), "zcode-agent-idle-reclaim-at-"));
+    createdDirs.push(workspacePath);
+    const manager = new ZCodeAgentProcessManager({
+      idleTimeoutMs: 50,
+      commandResolver: () => ({
+        command: process.execPath,
+        cwd: workspacePath,
+        args: [
+          "-e",
+          `
+        require("node:readline").createInterface({ input: process.stdin }).on("line", line => {
+          const request = JSON.parse(line);
+          process.stdout.write(JSON.stringify({ id: request.id, result: {} }) + "\\n");
+        });
+      `,
+        ],
+      }),
+    });
+    try {
+      const client = await manager.getClient({ workspacePath });
+      await client.request("workspace/readState", {});
+      // 未回收前没有时刻：上层据此判断「还在正常使用」，不能误把请求挡在冷却期里。
+      expect(manager.getLastIdleReclaimAt(workspacePath)).toBeUndefined();
+      await vi.waitFor(() => expect(client.isDisposed).toBe(true), { timeout: 3_000 });
+      // 回收后必须留下时间戳：service 侧的 start-if-needed 靠它把被动观察降级，
+      // 否则回收动作会被观察者的重订阅立刻抵消（reclaim → respawn 自激）。
+      const reclaimedAt = manager.getLastIdleReclaimAt(workspacePath);
+      expect(typeof reclaimedAt).toBe("number");
+      expect(Date.now() - reclaimedAt!).toBeLessThan(10_000);
+      // 其它 workspace 不受影响。
+      expect(manager.getLastIdleReclaimAt(join(workspacePath, "other"))).toBeUndefined();
+    } finally {
+      await manager.disposeAllAndWait();
+    }
+  });
+
   it("主动回收 workspace 时把 agent 退出标为 expected", async () => {
     const workspacePath = mkdtempSync(join(tmpdir(), "zcode-agent-lifecycle-expected-"));
     createdDirs.push(workspacePath);

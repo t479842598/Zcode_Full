@@ -1,5 +1,9 @@
 // 草稿预热会话在 runtime 换代后的重建门禁。
-// 覆盖：状态机全分支（纯函数）+ hook 接线（换代触发 invalidate、超时回落、重建中再换代重置计时器）。
+// 覆盖：状态机全分支（纯函数）+ hook 接线（unavailable 只作废不重建、超时回落、重建中再换代重置计时器）。
+//
+// 关键回归：unavailable 绝不能触发 invalidateDraftRuntime。早期实现在 dispose 当场递增
+// draftRuntimeInvalidationVersion，预热 owner 立刻 createSession，写路径又把 agent 拉回来，
+// 形成「idle 回收 → 重建 → 再回收」自激（2026-10-23 实测每轮 24~32ms）。
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -93,6 +97,7 @@ interface ProbeOptions {
   prewarmSessionId: string | null;
   onRuntimeRestart?: (listener: () => void) => () => void;
   onRuntimeLifecycle?: (listener: (state: "available" | "unavailable") => void) => () => void;
+  onRuntimeUnavailable?: () => void;
 }
 
 let latest: DraftRuntimeRebuildGate | null = null;
@@ -102,8 +107,8 @@ function Probe(options: ProbeOptions) {
     enabled: options.enabled,
     onRuntimeRestart: options.onRuntimeRestart,
     onRuntimeLifecycle: options.onRuntimeLifecycle,
+    onRuntimeUnavailable: options.onRuntimeUnavailable,
     prewarmSessionId: options.prewarmSessionId,
-    workspacePath: "/workspace",
   });
   return null;
 }
@@ -170,53 +175,56 @@ describe("reduceDraftRuntimeRebuildGate", () => {
   it("换代 → 进入 rebuilding 并记住换代时的会话 id", () => {
     const next = reduceDraftRuntimeRebuildGate(DRAFT_RUNTIME_REBUILD_GATE_IDLE, {
       prewarmSessionId: "draft-1",
-      type: "runtimeRestart",
+      type: "runtimeUnavailable",
     });
     expect(next.rebuilding).toBe(true);
+    expect(next.stale).toBe(true);
     expect(next.pendingFrom).toBe("draft-1");
     expect(next.epoch).toBe(1);
   });
 
-  it("新会话到达 → 回到空闲", () => {
-    const rebuilding = reduceDraftRuntimeRebuildGate(DRAFT_RUNTIME_REBUILD_GATE_IDLE, {
+  it("新会话到达 → 回到空闲且解除 stale", () => {
+    const unavailable = reduceDraftRuntimeRebuildGate(DRAFT_RUNTIME_REBUILD_GATE_IDLE, {
       prewarmSessionId: "draft-1",
-      type: "runtimeRestart",
+      type: "runtimeUnavailable",
     });
-    const next = reduceDraftRuntimeRebuildGate(rebuilding, {
+    const next = reduceDraftRuntimeRebuildGate(unavailable, {
       prewarmSessionId: "draft-2",
       type: "prewarmSessionChanged",
     });
     expect(next.rebuilding).toBe(false);
+    expect(next.stale).toBe(false);
     expect(next.pendingFrom).toBeNull();
   });
 
   it("会话 id 未变或暂时为空 → 保持 rebuilding", () => {
-    const rebuilding = reduceDraftRuntimeRebuildGate(DRAFT_RUNTIME_REBUILD_GATE_IDLE, {
+    const unavailable = reduceDraftRuntimeRebuildGate(DRAFT_RUNTIME_REBUILD_GATE_IDLE, {
       prewarmSessionId: "draft-1",
-      type: "runtimeRestart",
+      type: "runtimeUnavailable",
     });
     expect(
-      reduceDraftRuntimeRebuildGate(rebuilding, {
+      reduceDraftRuntimeRebuildGate(unavailable, {
         prewarmSessionId: "draft-1",
         type: "prewarmSessionChanged",
       }).rebuilding,
     ).toBe(true);
     // retire 到重建完成之间 binding 为 null，不能据此解除门禁。
     expect(
-      reduceDraftRuntimeRebuildGate(rebuilding, {
+      reduceDraftRuntimeRebuildGate(unavailable, {
         prewarmSessionId: null,
         type: "prewarmSessionChanged",
       }).rebuilding,
     ).toBe(true);
   });
 
-  it("超时 → 解除门禁但保留 pendingFrom（重建仍在进行）", () => {
-    const rebuilding = reduceDraftRuntimeRebuildGate(DRAFT_RUNTIME_REBUILD_GATE_IDLE, {
+  it("超时 → 解除门禁但保留 pendingFrom 与 stale（会话确实已消失）", () => {
+    const unavailable = reduceDraftRuntimeRebuildGate(DRAFT_RUNTIME_REBUILD_GATE_IDLE, {
       prewarmSessionId: "draft-1",
-      type: "runtimeRestart",
+      type: "runtimeUnavailable",
     });
-    const next = reduceDraftRuntimeRebuildGate(rebuilding, { type: "rebuildTimeout" });
+    const next = reduceDraftRuntimeRebuildGate(unavailable, { type: "rebuildTimeout" });
     expect(next.rebuilding).toBe(false);
+    expect(next.stale).toBe(true);
     expect(next.pendingFrom).toBe("draft-1");
   });
 
@@ -229,11 +237,11 @@ describe("reduceDraftRuntimeRebuildGate", () => {
   it("重建中再次换代 → epoch 递增，用于重置计时器", () => {
     const first = reduceDraftRuntimeRebuildGate(DRAFT_RUNTIME_REBUILD_GATE_IDLE, {
       prewarmSessionId: "draft-1",
-      type: "runtimeRestart",
+      type: "runtimeUnavailable",
     });
     const second = reduceDraftRuntimeRebuildGate(first, {
       prewarmSessionId: null,
-      type: "runtimeRestart",
+      type: "runtimeUnavailable",
     });
     expect(second.epoch).toBe(2);
     expect(second.rebuilding).toBe(true);
@@ -241,50 +249,73 @@ describe("reduceDraftRuntimeRebuildGate", () => {
 });
 
 describe("useDraftRuntimeRebuildGate", () => {
-  it("草稿态换代 → 触发 invalidateDraftRuntime 并禁用发送", () => {
-    const restart = createRestartHook();
-    renderProbe({ enabled: true, onRuntimeRestart: restart.subscribe, prewarmSessionId: "draft-1" });
-
-    expect(latest?.rebuilding).toBe(false);
-    restart.fire();
-
-    expect(mocks.invalidateDraftRuntime).toHaveBeenCalledWith("/workspace", undefined);
-    expect(latest?.rebuilding).toBe(true);
-  });
-
-  it("非草稿态换代 → 不触发 invalidate，不禁用发送", () => {
-    const restart = createRestartHook();
-    renderProbe({ enabled: false, onRuntimeRestart: restart.subscribe, prewarmSessionId: null });
-    restart.fire();
-
-    expect(mocks.invalidateDraftRuntime).not.toHaveBeenCalled();
-    expect(latest?.rebuilding).toBe(false);
-  });
-
-  it("新预热会话到达 → 解除禁用", () => {
-    const restart = createRestartHook();
-    const probe = renderProbe({
+  // 自激回归：unavailable 只作废当代预热会话，绝不递增 invalidationVersion。
+  it("lifecycle unavailable → 禁用发送并标 stale，但不触发重建", () => {
+    const lifecycle = createLifecycleHook();
+    const onRuntimeUnavailable = vi.fn();
+    renderProbe({
       enabled: true,
-      onRuntimeRestart: restart.subscribe,
+      onRuntimeLifecycle: lifecycle.subscribe,
+      onRuntimeUnavailable,
       prewarmSessionId: "draft-1",
     });
-    restart.fire();
+
+    expect(latest?.rebuilding).toBe(false);
+    expect(latest?.stale).toBe(false);
+    lifecycle.fire("unavailable");
+
     expect(latest?.rebuilding).toBe(true);
+    expect(latest?.stale).toBe(true);
+    expect(onRuntimeUnavailable).toHaveBeenCalledTimes(1);
+    expect(mocks.invalidateDraftRuntime).not.toHaveBeenCalled();
+  });
+
+  it("非草稿态收到 unavailable → 不 disable 也不作废", () => {
+    const lifecycle = createLifecycleHook();
+    const onRuntimeUnavailable = vi.fn();
+    renderProbe({
+      enabled: false,
+      onRuntimeLifecycle: lifecycle.subscribe,
+      onRuntimeUnavailable,
+      prewarmSessionId: null,
+    });
+    lifecycle.fire("unavailable");
+
+    expect(onRuntimeUnavailable).not.toHaveBeenCalled();
+    expect(latest?.rebuilding).toBe(false);
+    expect(latest?.stale).toBe(false);
+  });
+
+  it("新预热会话到达 → 解除禁用并清掉 stale", () => {
+    const lifecycle = createLifecycleHook();
+    const probe = renderProbe({
+      enabled: true,
+      onRuntimeLifecycle: lifecycle.subscribe,
+      prewarmSessionId: "draft-1",
+    });
+    lifecycle.fire("unavailable");
+    expect(latest?.rebuilding).toBe(true);
+    expect(latest?.stale).toBe(true);
 
     probe.rerender({
       enabled: true,
-      onRuntimeRestart: restart.subscribe,
+      onRuntimeLifecycle: lifecycle.subscribe,
       prewarmSessionId: "draft-2",
     });
 
     expect(latest?.rebuilding).toBe(false);
+    expect(latest?.stale).toBe(false);
   });
 
-  it("超时未重建 → 解除禁用回落无预热发送", () => {
+  it("超时未拿到新会话 → 解除禁用但保留 stale", () => {
     vi.useFakeTimers();
-    const restart = createRestartHook();
-    renderProbe({ enabled: true, onRuntimeRestart: restart.subscribe, prewarmSessionId: "draft-1" });
-    restart.fire();
+    const lifecycle = createLifecycleHook();
+    renderProbe({
+      enabled: true,
+      onRuntimeLifecycle: lifecycle.subscribe,
+      prewarmSessionId: "draft-1",
+    });
+    lifecycle.fire("unavailable");
     expect(latest?.rebuilding).toBe(true);
 
     act(() => {
@@ -292,18 +323,48 @@ describe("useDraftRuntimeRebuildGate", () => {
     });
 
     expect(latest?.rebuilding).toBe(false);
+    expect(latest?.stale).toBe(true);
   });
 
-  it("重建中再次换代 → 计时器重置，不提前解除", () => {
+it("超时后迟到的新会话到达 → 仍清掉 stale（否则附件永久 waitingSession）", () => {
     vi.useFakeTimers();
-    const restart = createRestartHook();
-    renderProbe({ enabled: true, onRuntimeRestart: restart.subscribe, prewarmSessionId: "draft-1" });
-    restart.fire();
+    const lifecycle = createLifecycleHook();
+    const probe = renderProbe({
+      enabled: true,
+      onRuntimeLifecycle: lifecycle.subscribe,
+      prewarmSessionId: "draft-1",
+    });
+    lifecycle.fire("unavailable");
+    act(() => {
+      vi.advanceTimersByTime(DRAFT_RUNTIME_REBUILD_TIMEOUT_MS);
+    });
+    expect(latest?.rebuilding).toBe(false);
+    expect(latest?.stale).toBe(true);
+
+    probe.rerender({
+      enabled: true,
+      onRuntimeLifecycle: lifecycle.subscribe,
+      prewarmSessionId: "draft-rebuilt",
+    });
+
+    expect(latest?.stale).toBe(false);
+    expect(latest?.rebuilding).toBe(false);
+  });
+
+  it("重建窗口内再次换代 → 计时器重置，不提前解除", () => {
+    vi.useFakeTimers();
+    const lifecycle = createLifecycleHook();
+    renderProbe({
+      enabled: true,
+      onRuntimeLifecycle: lifecycle.subscribe,
+      prewarmSessionId: "draft-1",
+    });
+    lifecycle.fire("unavailable");
 
     act(() => {
       vi.advanceTimersByTime(DRAFT_RUNTIME_REBUILD_TIMEOUT_MS - 1000);
     });
-    restart.fire();
+    lifecycle.fire("unavailable");
     act(() => {
       vi.advanceTimersByTime(1500);
     });
@@ -311,47 +372,32 @@ describe("useDraftRuntimeRebuildGate", () => {
     expect(latest?.rebuilding).toBe(true);
   });
 
-  // Bug 回归：onRuntimeRestart 只在新 agent 进程 spawn 时才发，而 agent 是懒启动——CUA Helper
-  // 就绪触发 workspace-dispose 后没人拉起 agent，换代通知永不到达，预热会话永不重建，附件卡在
-  // waitingSession 直到用户手动点一次发送。dispose 当场唯一可观测的信号是 lifecycle unavailable。
-  it("lifecycle unavailable → dispose 当场就触发重建，不等新进程 spawn", () => {
+  it("unavailable 之后的 available → 不再重复作废（否则白作废下一代）", () => {
     const lifecycle = createLifecycleHook();
+    const onRuntimeUnavailable = vi.fn();
     renderProbe({
       enabled: true,
       onRuntimeLifecycle: lifecycle.subscribe,
-      prewarmSessionId: "draft-1",
-    });
-
-    expect(latest?.rebuilding).toBe(false);
-    lifecycle.fire("unavailable");
-
-    expect(mocks.invalidateDraftRuntime).toHaveBeenCalledTimes(1);
-    expect(mocks.invalidateDraftRuntime).toHaveBeenCalledWith("/workspace", undefined);
-    expect(latest?.rebuilding).toBe(true);
-  });
-
-  it("unavailable 之后的 available → 不再重复 invalidate（否则白建一代预热会话）", () => {
-    const lifecycle = createLifecycleHook();
-    renderProbe({
-      enabled: true,
-      onRuntimeLifecycle: lifecycle.subscribe,
+      onRuntimeUnavailable,
       prewarmSessionId: "draft-1",
     });
 
     lifecycle.fire("unavailable");
     lifecycle.fire("available");
 
-    expect(mocks.invalidateDraftRuntime).toHaveBeenCalledTimes(1);
+    expect(onRuntimeUnavailable).toHaveBeenCalledTimes(1);
     expect(latest?.rebuilding).toBe(true);
   });
 
-  it("两条通道都在时只订阅 lifecycle：restart 事件不再二次触发重建", () => {
+  it("两条通道都在时只订阅 lifecycle：restart 事件不再二次处理", () => {
     const lifecycle = createLifecycleHook();
     const restart = createRestartHook();
+    const onRuntimeUnavailable = vi.fn();
     renderProbe({
       enabled: true,
       onRuntimeLifecycle: lifecycle.subscribe,
       onRuntimeRestart: restart.subscribe,
+      onRuntimeUnavailable,
       prewarmSessionId: "draft-1",
     });
 
@@ -359,19 +405,19 @@ describe("useDraftRuntimeRebuildGate", () => {
     // 真实时序里 restarted 紧跟新进程 spawn 到达；它必须被忽略。
     restart.fire();
 
-    expect(mocks.invalidateDraftRuntime).toHaveBeenCalledTimes(1);
+    expect(onRuntimeUnavailable).toHaveBeenCalledTimes(1);
   });
 
-  it("非草稿态收到 unavailable → 不触发 invalidate", () => {
-    const lifecycle = createLifecycleHook();
+  it("没有 lifecycle 通道时退回 restart 通道，同样只作废不重建", () => {
+    const restart = createRestartHook();
     renderProbe({
-      enabled: false,
-      onRuntimeLifecycle: lifecycle.subscribe,
-      prewarmSessionId: null,
+      enabled: true,
+      onRuntimeRestart: restart.subscribe,
+      prewarmSessionId: "draft-1",
     });
-    lifecycle.fire("unavailable");
+    restart.fire();
 
+    expect(latest?.rebuilding).toBe(true);
     expect(mocks.invalidateDraftRuntime).not.toHaveBeenCalled();
-    expect(latest?.rebuilding).toBe(false);
   });
 });

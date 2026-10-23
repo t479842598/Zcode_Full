@@ -31,6 +31,10 @@ import {
   UI_FONT_SIZE_STORAGE_KEY,
 } from "@/lib/uiFontSize.js";
 import {
+  applyAppearanceCustomization,
+  loadAppearanceCustomization,
+} from "@/lib/appearanceCustomization.js";
+import {
   isTaskNotificationEnabled,
   isTaskNotificationSoundPreferenceEnabled,
   persistTaskNotificationEnabled,
@@ -547,6 +551,9 @@ export function createZCodeStore(
   syncSystemThemeListener(useStore.getState().theme);
   applyTheme(useStore.getState().theme);
   applyUiFontSizePx(useStore.getState().uiFontSizePx);
+  // 自定义外观（配色预设 / 强调色 / 背景图）是纯视觉偏好，不进 store 也不进广播字段：
+  // 由 localStorage 承载，跨窗口靠 storage 事件同步，避免与 theme 广播形成回环。
+  applyAppearanceCustomization(loadAppearanceCustomization());
   document.documentElement.classList.toggle(
     "dark",
     resolveTheme(useStore.getState().theme) === "dark",

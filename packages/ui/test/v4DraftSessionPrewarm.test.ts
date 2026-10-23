@@ -1119,6 +1119,56 @@ describe("useDraftSessionPrewarm workspace owner", () => {
     expect(observed.at(-1)?.sessionId).toBe("draft-2");
   });
 
+// 自激回归：runtime 空闲回收会冲掉草稿预热会话。若回收当场就重建（递增 invalidationVersion），
+  // 写路径会把 agent 拉回来，形成「回收 → 重建 → 再回收」永久自激。正确语义是：当场只作废，
+  // 重建由用户真正发送时的 waitForSession 懒发起（docs/ui/draft-prewarm-runtime-reclaim.md）。
+  it("runtime 回收丢弃 binding → 不提前重建，用户发送时 waitForSession 就地重建", async () => {
+    let createCount = 0;
+    const { calls, dispatch } = createDispatchRecorder({
+      onCreate: () => acceptedCreateAck(`draft-${++createCount}`),
+    });
+    const transportIdentity = {};
+    const observed: Array<ReturnType<typeof useDraftSessionPrewarm>["binding"]> = [];
+    const root = createRoot(installMinimalDom());
+    mountedRoots.push(root);
+    let owner!: ReturnType<typeof useDraftSessionPrewarm>;
+
+    await act(async () => {
+      root.render(
+        createElement(PrewarmHarness, {
+          workspaceKey: "/local/reclaim",
+          paneId: "workspace-main",
+          invalidationVersion: 0,
+          transportIdentity,
+          dispatchCommand: dispatch,
+          onRender: (binding) => observed.push(binding),
+          onOwner: (value) => {
+            owner = value;
+          },
+        }),
+      );
+      await flushMicrotasks();
+    });
+    expect(observed.at(-1)?.sessionId).toBe("draft-1");
+
+    // SessionPane 在 lifecycle unavailable 时调用 discard()（不递增版本）。
+    await act(async () => {
+      observed.at(-1)?.discard();
+      await flushMicrotasks();
+    });
+    expect(observed.at(-1)).toBeNull();
+    // 没有用户动作之前，一次 createSession 都不该再发。
+    expect(calls.filter((call) => call.type === "createSession")).toHaveLength(1);
+
+    // 用户点发送：waitForSession 自己解除 blocked 并重建，不需要用户点第二次。
+    await act(async () => {
+      const binding = await owner.waitForSession();
+      expect(binding.sessionId).toBe("draft-2");
+      await flushMicrotasks();
+    });
+    expect(calls.filter((call) => call.type === "createSession")).toHaveLength(2);
+  });
+
   it("createSession 失败 → 有界退避自动重试，重试成功后上抛 binding", async () => {
     vi.useFakeTimers();
     const calls: Array<{ type: string; sessionId: string | null }> = [];

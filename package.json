@@ -1,6 +1,6 @@
 {
   "name": "zcode",
-  "version": "3.16.2-selfhost.1",
+  "version": "3.16.2-selfhost.9",
   "private": true,
   "type": "module",
   "scripts": {
